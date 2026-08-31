@@ -1,0 +1,24 @@
+digraph plan {
+  graph [rankdir="LR", bgcolor="transparent"];
+  node [shape="box", style="rounded,filled", fontname="Arial"];
+  subgraph "cluster_cpu" {
+    label="cpu"; color="#0ea5e9";
+    "decode-audio" [label="decode-audio\ndecode", fillcolor="#0ea5e922", color="#0ea5e9"];
+    "decode-image" [label="decode-image\ndecode", fillcolor="#0ea5e922", color="#0ea5e9"];
+    "format-response" [label="format-response\npostprocess", fillcolor="#0ea5e922", color="#0ea5e9"];
+  }
+  subgraph "cluster_gpu-0" {
+    label="gpu-0"; color="#8b5cf6";
+    "language-core" [label="language-core\nlanguage", fillcolor="#8b5cf622", color="#8b5cf6"];
+    "vision-encoder" [label="vision-encoder\nvision", fillcolor="#8b5cf622", color="#8b5cf6"];
+  }
+  subgraph "cluster_gpu-1" {
+    label="gpu-1"; color="#10b981";
+    "audio-encoder" [label="audio-encoder\naudio", fillcolor="#10b98122", color="#10b981"];
+  }
+  "decode-image" -> "vision-encoder" [label="pixels"];
+  "decode-audio" -> "audio-encoder" [label="waveform"];
+  "vision-encoder" -> "language-core" [label="vision tokens"];
+  "audio-encoder" -> "language-core" [label="audio tokens"];
+  "language-core" -> "format-response" [label="tokens"];
+}

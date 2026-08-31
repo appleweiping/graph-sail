@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graph Sail — multimodal-assistant</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; background: #07111f; color: #e5edf8; }
+    main { max-width: 1080px; margin: auto; padding: 42px 24px 64px; }
+    .eyebrow { color: #38bdf8; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; }
+    h1 { font-size: clamp(2rem, 5vw, 4rem); margin: .2em 0; }
+    .subtitle { color: #9fb0c8; max-width: 720px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(190px,1fr));
+      gap: 12px; margin: 28px 0; }
+    .metric, section { background: #0d1b2e; border: 1px solid #1e3150; border-radius: 14px; }
+    .metric { padding: 16px; display: grid; gap: 8px; }
+    .metric span { color: #8da2bd; font-size: .82rem; }
+    section { padding: 20px; margin-top: 18px; overflow-x: auto; }
+    svg { width: 100%; min-width: 720px; background: #091526; border-radius: 10px; }
+    .device-label { fill: #dbeafe; font: 600 13px system-ui; }
+    .node-label { fill: #06111f; font: 700 11px system-ui; pointer-events: none; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #1b2b44; }
+    th { color: #7dd3fc; font-size: .8rem; text-transform: uppercase; }
+    code { color: #bae6fd; }
+  </style>
+</head>
+<body><main>
+  <div class="eyebrow">Graph Sail plan</div>
+  <h1>multimodal-assistant</h1>
+  <p class="subtitle">Deterministic placement report generated from measured component
+    estimates and explicit device constraints.</p>
+  <div class="grid">
+    <div class="metric"><span>Algorithm</span><strong>beam-earliest-finish:16</strong></div>
+    <div class="metric"><span>Makespan</span><strong>53.13 ms</strong></div>
+    <div class="metric"><span>Cross-device edges</span>
+      <strong>4</strong></div>
+    <div class="metric"><span>Transfer estimate</span>
+      <strong>3.42 ms</strong></div>
+    <div class="metric"><span>cpu memory</span><strong>180 / 16000 MB</strong></div>
+<div class="metric"><span>gpu-0 memory</span><strong>9900 / 12000 MB</strong></div>
+<div class="metric"><span>gpu-1 memory</span><strong>1800 / 10000 MB</strong></div>
+  </div>
+  <section><h2>Schedule</h2><svg viewBox="0 0 940 245" role="img" aria-label="Schedule for multimodal-assistant"><text x="8" y="49" class="device-label">cpu</text><line x1="140" y1="55" x2="925" y2="55" stroke="#26334a" /><rect x="140.00" y="33" width="43.76" height="36" rx="7" fill="#0ea5e9" opacity="0.88"><title>decode-audio: 0.00-3.00 ms</title></rect><text x="147.00" y="56" class="node-label">decode-audio</text><rect x="183.76" y="33" width="65.63" height="36" rx="7" fill="#0ea5e9" opacity="0.88"><title>decode-image: 3.00-7.50 ms</title></rect><text x="190.76" y="56" class="node-label">decode-image</text><rect x="897.50" y="33" width="17.50" height="36" rx="7" fill="#0ea5e9" opacity="0.88"><title>format-response: 51.93-53.13 ms</title></rect><text x="8" y="119" class="device-label">gpu-0</text><line x1="140" y1="125" x2="925" y2="125" stroke="#26334a" /><rect x="283.38" y="103" width="160.44" height="36" rx="7" fill="#8b5cf6" opacity="0.88"><title>vision-encoder: 9.83-20.83 ms</title></rect><text x="290.38" y="126" class="node-label">vision-encoder</text><rect x="443.82" y="103" width="452.15" height="36" rx="7" fill="#8b5cf6" opacity="0.88"><title>language-core: 20.83-51.83 ms</title></rect><text x="450.82" y="126" class="node-label">language-core</text><text x="8" y="189" class="device-label">gpu-1</text><line x1="140" y1="195" x2="925" y2="195" stroke="#26334a" /><rect x="192.22" y="173" width="102.10" height="36" rx="7" fill="#10b981" opacity="0.88"><title>audio-encoder: 3.58-10.58 ms</title></rect><text x="199.22" y="196" class="node-label">audio-encoder</text></svg></section>
+  <section><h2>Critical chain</h2><p><code>decode-audio → decode-image → vision-encoder → language-core → format-response</code></p></section>
+  <section><h2>Node detail</h2><table><thead><tr>
+    <th>Node</th><th>Device</th><th>Start ms</th><th>Finish ms</th>
+    <th>Transfer ms</th><th>Memory MB</th>
+  </tr></thead><tbody><tr><td>decode-audio</td><td>cpu</td><td>0.000</td><td>3.000</td><td>0.000</td><td>60.0</td></tr>
+<tr><td>audio-encoder</td><td>gpu-1</td><td>3.580</td><td>10.580</td><td>0.580</td><td>1800.0</td></tr>
+<tr><td>decode-image</td><td>cpu</td><td>3.000</td><td>7.500</td><td>0.000</td><td>80.0</td></tr>
+<tr><td>vision-encoder</td><td>gpu-0</td><td>9.830</td><td>20.830</td><td>2.330</td><td>2900.0</td></tr>
+<tr><td>language-core</td><td>gpu-0</td><td>20.830</td><td>51.830</td><td>0.404</td><td>7000.0</td></tr>
+<tr><td>format-response</td><td>cpu</td><td>51.935</td><td>53.135</td><td>0.105</td><td>40.0</td></tr></tbody></table></section>
+</main></body></html>

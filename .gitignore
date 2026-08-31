@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+graph-sail-output/
+/demo-output/
+.demo-output/
+.installed-smoke/
+.edge-profile*/

@@ -1,0 +1,156 @@
+{
+  "name": "multimodal-assistant",
+  "default_bandwidth_mb_s": 900,
+  "default_link_latency_ms": 0.15,
+  "devices": [
+    {
+      "name": "cpu",
+      "memory_mb": 16000,
+      "kinds": [
+        "decode",
+        "postprocess"
+      ]
+    },
+    {
+      "name": "gpu-0",
+      "memory_mb": 12000,
+      "kinds": [
+        "vision",
+        "audio",
+        "language"
+      ]
+    },
+    {
+      "name": "gpu-1",
+      "memory_mb": 10000,
+      "kinds": [
+        "vision",
+        "audio",
+        "language"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "source": "cpu",
+      "target": "gpu-0",
+      "bandwidth_mb_s": 8000,
+      "latency_ms": 0.08
+    },
+    {
+      "source": "cpu",
+      "target": "gpu-1",
+      "bandwidth_mb_s": 8000,
+      "latency_ms": 0.08
+    },
+    {
+      "source": "gpu-0",
+      "target": "cpu",
+      "bandwidth_mb_s": 8000,
+      "latency_ms": 0.08
+    },
+    {
+      "source": "gpu-1",
+      "target": "cpu",
+      "bandwidth_mb_s": 8000,
+      "latency_ms": 0.08
+    },
+    {
+      "source": "gpu-0",
+      "target": "gpu-1",
+      "bandwidth_mb_s": 22000,
+      "latency_ms": 0.04
+    },
+    {
+      "source": "gpu-1",
+      "target": "gpu-0",
+      "bandwidth_mb_s": 22000,
+      "latency_ms": 0.04
+    }
+  ],
+  "nodes": [
+    {
+      "id": "decode-image",
+      "kind": "decode",
+      "memory_mb": 80,
+      "latency_ms": {
+        "cpu": 4.5
+      }
+    },
+    {
+      "id": "decode-audio",
+      "kind": "decode",
+      "memory_mb": 60,
+      "latency_ms": {
+        "cpu": 3.0
+      }
+    },
+    {
+      "id": "vision-encoder",
+      "kind": "vision",
+      "memory_mb": 2900,
+      "latency_ms": {
+        "gpu-0": 11.0,
+        "gpu-1": 13.0
+      }
+    },
+    {
+      "id": "audio-encoder",
+      "kind": "audio",
+      "memory_mb": 1800,
+      "latency_ms": {
+        "gpu-0": 8.5,
+        "gpu-1": 7.0
+      }
+    },
+    {
+      "id": "language-core",
+      "kind": "language",
+      "memory_mb": 7000,
+      "latency_ms": {
+        "gpu-0": 31.0,
+        "gpu-1": 34.0
+      }
+    },
+    {
+      "id": "format-response",
+      "kind": "postprocess",
+      "memory_mb": 40,
+      "latency_ms": {
+        "cpu": 1.2
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "decode-image",
+      "target": "vision-encoder",
+      "payload_mb": 18,
+      "label": "pixels"
+    },
+    {
+      "source": "decode-audio",
+      "target": "audio-encoder",
+      "payload_mb": 4,
+      "label": "waveform"
+    },
+    {
+      "source": "vision-encoder",
+      "target": "language-core",
+      "payload_mb": 12,
+      "label": "vision tokens"
+    },
+    {
+      "source": "audio-encoder",
+      "target": "language-core",
+      "payload_mb": 8,
+      "label": "audio tokens"
+    },
+    {
+      "source": "language-core",
+      "target": "format-response",
+      "payload_mb": 0.2,
+      "label": "tokens"
+    }
+  ]
+}
