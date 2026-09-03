@@ -16,3 +16,12 @@ The command writes:
 - `plan.json`: full placement, metrics, and candidate trace;
 - `plan.dot`: Graphviz source grouped by selected device;
 - `report.html`: standalone, local HTML timeline with no remote assets.
+
+`measurements.jsonl` demonstrates the profiler-neutral calibration boundary. Apply its measured cells
+and benchmark both bundled planners without changing the checked-in demo graph:
+
+```bash
+graph-sail calibrate examples/demo-output/graph.json examples/measurements.jsonl \
+  --output calibrated
+graph-sail benchmark calibrated/graph.json --repeats 7 --output calibrated/benchmark.json
+```

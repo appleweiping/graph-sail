@@ -8,6 +8,7 @@ import pytest
 from graph_sail.demo import demo_payload
 from graph_sail.errors import ValidationError
 from graph_sail.io import graph_from_dict, load_graph
+from graph_sail.limits import MAX_TEXT_LENGTH
 
 
 def test_demo_payload_is_valid():
@@ -217,3 +218,35 @@ def test_load_graph_round_trip(tmp_path):
     path = tmp_path / "graph.json"
     path.write_text(json.dumps(demo_payload()), encoding="utf-8")
     assert load_graph(path).name == "multimodal-assistant"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda payload: payload.update({"name": 1}), "must be a string"),
+        (lambda payload: payload.update({"name": " "}), "must not be empty"),
+        (
+            lambda payload: payload.update({"name": "x" * (MAX_TEXT_LENGTH + 1)}),
+            "character limit",
+        ),
+        (lambda payload: payload.update({"devices": "bad"}), "must be an array"),
+        (lambda payload: payload["edges"][0].update({"payload_mb": -1}), "zero or greater"),
+    ],
+)
+def test_parser_primitive_boundaries_are_domain_errors(mutate, message):
+    payload = demo_payload()
+    mutate(payload)
+    with pytest.raises(ValidationError, match=message):
+        graph_from_dict(payload)
+
+
+def test_parser_collection_and_mapping_resource_limits(monkeypatch):
+    payload = demo_payload()
+    monkeypatch.setattr("graph_sail.io.MAX_DEVICES", 1)
+    with pytest.raises(ValidationError, match="item limit"):
+        graph_from_dict(payload)
+    monkeypatch.setattr("graph_sail.io.MAX_DEVICES", 1_024)
+    payload = demo_payload()
+    payload["nodes"][0]["latency_ms"] = {1: 2}
+    with pytest.raises(ValidationError, match="keys must be strings"):
+        graph_from_dict(payload)

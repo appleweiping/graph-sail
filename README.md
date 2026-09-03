@@ -51,6 +51,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Critical-chain, utilization, transfer, and memory summaries.
 - JSON, Graphviz DOT, and responsive standalone HTML reports.
 - Standard-library runtime: no GPU, model weights, service, or network access required.
+- Profiler-neutral JSONL calibration with median aggregation and explicit provenance.
+- Reproducible greedy-versus-beam benchmark JSON with plan digests and host metadata.
 
 ## Installation
 
@@ -86,6 +88,17 @@ graph-sail plan examples/demo-output/graph.json --algorithm beam --beam-width 16
 ```
 
 Use `--algorithm greedy` for the fastest deterministic baseline.
+
+Calibrate latency cells from measurements exported by a deployment harness, then compare the bundled
+planning baselines:
+
+```bash
+graph-sail calibrate examples/demo-output/graph.json examples/measurements.jsonl --output calibrated
+graph-sail benchmark calibrated/graph.json --repeats 11 --warmups 2 --output benchmark.json
+```
+
+The calibration contract, timing protocol, research reporting rules, and remaining evidence boundary
+are specified in [calibration-and-benchmarks.md](docs/calibration-and-benchmarks.md).
 
 ## Input at a glance
 
@@ -124,10 +137,10 @@ print(f"estimated makespan: {plan.makespan_ms:.2f} ms")
 write_report_bundle(graph, plan, "my-plan")
 ```
 
-Public input models and result records use frozen dataclass shells. Their tuple fields cannot be
-reassigned, while JSON-shaped mapping fields such as latency profiles and memory summaries remain
-ordinary dictionaries and should be treated as read-only. `PlanResult.to_dict()` returns a fresh,
-stable JSON-ready object suitable for CI snapshots or downstream tooling.
+Public input models and result records are defensively immutable. Constructors snapshot caller-owned
+collections, mapping fields expose read-only views, and direct construction plus
+`dataclasses.replace()` re-run the same domain invariants as file parsing. `PlanResult.to_dict()`
+returns a detached, stable JSON-ready object suitable for CI snapshots or downstream tooling.
 
 ## How planning works
 
@@ -162,10 +175,17 @@ python -m coverage report
 ```
 
 The suite covers parsing, graph validation, cycle diagnostics, transfer estimates, memory constraints,
-greedy dead ends, beam recovery, deterministic output, report escaping, and CLI behavior on CPU.
+greedy dead ends, beam recovery, deterministic output, calibration provenance, baseline digests,
+performance guards, report escaping, and CLI behavior on CPU.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the
-[code of conduct](CODE_OF_CONDUCT.md) before contributing.
+[code of conduct](CODE_OF_CONDUCT.md) before contributing. Maintainer authority is documented in
+[GOVERNANCE.md](GOVERNANCE.md), release verification in [docs/releases.md](docs/releases.md), and
+versioned citation metadata in [CITATION.cff](CITATION.cff).
+
+## Companion repositories
+
+Graph Sail is one independent part of a small multimodal tooling suite. [Payload Palette](https://github.com/appleweiping/payload-palette) validates request media, [Frame Quorum](https://github.com/appleweiping/frame-quorum) selects auditable key frames, [Evidence Braid](https://github.com/appleweiping/evidence-braid) fuses evidence under explicit policies, and [Stream Quilt](https://github.com/appleweiping/stream-quilt) aligns event streams. The repositories have separate contracts and release cycles; no runtime dependency is implied.
 
 ## License
 

@@ -17,6 +17,8 @@ flowchart LR
     H --> I[JSON]
     H --> J[DOT]
     H --> K[HTML timeline]
+    L[Measured latency JSONL] --> M[Median calibration]
+    M --> A
 ```
 
 ## Logical model
@@ -73,3 +75,10 @@ Every node records all candidate devices. Rejected candidates state whether the 
 allowlist, pinning, missing latency, or memory. Feasible candidates include start, finish, and
 incoming-transfer estimates. The report can therefore answer both “where was this placed?” and “why
 was the alternative rejected?”
+
+## Experimental boundary
+
+Calibration is a separate pure transformation before planning. It replaces only explicitly observed
+node/device latency cells and emits both a complete graph and aggregate provenance. Benchmarking then
+compares planner decision quality (estimated makespan) separately from planner runtime. See
+[calibration-and-benchmarks.md](calibration-and-benchmarks.md) for the contract and reporting protocol.

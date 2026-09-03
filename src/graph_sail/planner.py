@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from graph_sail.errors import PlanningError
 from graph_sail.graph import predecessor_edges, topological_order
+from graph_sail.limits import MAX_BEAM_WIDTH, MAX_PLANNER_EXPANSIONS
 from graph_sail.models import (
     CandidateTrace,
     DeviceSpec,
@@ -59,6 +60,7 @@ class GreedyPlanner:
     def plan(self, graph: GraphSpec) -> PlanResult:
         """Place and schedule every node, or raise a detailed feasibility error."""
 
+        _validate_planning_work(graph, beam_width=1)
         state = _PlanState.empty(graph)
         incoming = predecessor_edges(graph)
         node_index = graph.node_map
@@ -91,13 +93,20 @@ class BeamPlanner:
     name = "beam-earliest-finish"
 
     def __init__(self, beam_width: int = 16) -> None:
-        if isinstance(beam_width, bool) or not isinstance(beam_width, int) or beam_width < 1:
-            raise ValueError("beam_width must be a positive integer")
+        if (
+            isinstance(beam_width, bool)
+            or not isinstance(beam_width, int)
+            or not 1 <= beam_width <= MAX_BEAM_WIDTH
+        ):
+            raise ValueError(
+                f"beam_width must be a positive integer no greater than {MAX_BEAM_WIDTH}"
+            )
         self.beam_width = beam_width
 
     def plan(self, graph: GraphSpec) -> PlanResult:
         """Search up to ``beam_width`` deterministic partial placements per level."""
 
+        _validate_planning_work(graph, beam_width=self.beam_width)
         states = [_PlanState.empty(graph)]
         incoming = predecessor_edges(graph)
         node_index = graph.node_map
@@ -257,3 +266,12 @@ def _to_result(graph: GraphSpec, state: _PlanState, algorithm: str) -> PlanResul
         memory_used_mb=state.memory_used,
         decisions=state.decisions,
     )
+
+
+def _validate_planning_work(graph: GraphSpec, *, beam_width: int) -> None:
+    if not isinstance(graph, GraphSpec):
+        raise PlanningError("graph must be a GraphSpec")
+    graph.validate()
+    work = len(graph.nodes) * len(graph.devices) * beam_width
+    if work > MAX_PLANNER_EXPANSIONS:
+        raise PlanningError(f"planning work exceeds the {MAX_PLANNER_EXPANSIONS}-candidate limit")

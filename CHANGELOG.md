@@ -2,7 +2,26 @@
 
 All notable changes are recorded here. This project follows semantic versioning.
 
-## 0.1.0 - 2026-08-31
+## [Unreleased]
+
+## [0.2.0] - 2026-09-01
+
+### Added
+
+- Profiler-neutral latency calibration with strict JSONL input and auditable median aggregates.
+- Machine-readable greedy/beam benchmark results, deterministic plan digests, and runtime protocol.
+- Performance regression coverage and research reporting documentation.
+- PEP 561 type marker and complete documentation/example source-distribution manifest.
+- Checked-in, host-labelled Windows/CPython reference benchmark with digest-based regression checks.
+
+### Changed
+
+- Public graph and plan dataclasses now defensively snapshot nested collections and validate direct
+  construction and `dataclasses.replace()` operations.
+- Graph, calibration, beam-search, and benchmark entry points now enforce documented file,
+  collection, text, and candidate-work resource ceilings.
+
+## [0.1.0] - 2026-08-31
 
 ### Added
 

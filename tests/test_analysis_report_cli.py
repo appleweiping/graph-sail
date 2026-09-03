@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from graph_sail import __version__
 from graph_sail.analysis import analyze_plan, critical_chain
 from graph_sail.cli import main
 from graph_sail.demo import demo_graph, demo_payload
@@ -13,6 +14,13 @@ from graph_sail.errors import OutputError, PlanningError
 from graph_sail.io import graph_from_dict
 from graph_sail.planner import BeamPlanner
 from graph_sail.report import _dot, render_dot, render_html, write_report_bundle
+
+
+def test_cli_reports_package_version(capsys):
+    with pytest.raises(SystemExit) as error:
+        main(["--version"])
+    assert error.value.code == 0
+    assert capsys.readouterr().out == f"graph-sail {__version__}\n"
 
 
 @pytest.fixture
@@ -80,40 +88,28 @@ def test_report_bundle_contains_real_plan_data(tmp_path, demo_plan):
     assert paths["graph"].read_text(encoding="utf-8").startswith("digraph")
 
 
-def test_report_rejects_nonfinite_manual_plan(tmp_path, demo_plan):
-    graph, plan = demo_plan
-    final = replace(plan.schedule[-1], finish_ms=float("inf"))
-    invalid = replace(plan, schedule=(*plan.schedule[:-1], final))
-    with pytest.raises(PlanningError, match=r"makespan is not finite"):
-        write_report_bundle(graph, invalid, tmp_path)
+def test_scheduled_node_rejects_nonfinite_manual_result(demo_plan):
+    _, plan = demo_plan
+    with pytest.raises(PlanningError, match=r"finish_ms must be finite"):
+        replace(plan.schedule[-1], finish_ms=float("inf"))
 
 
-def test_analysis_rejects_overflowing_compute_total(demo_plan):
-    graph, plan = demo_plan
-    invalid_schedule = tuple(
-        replace(item, compute_ms=1e308) if index < 2 else item
-        for index, item in enumerate(plan.schedule)
-    )
-    with pytest.raises(PlanningError, match=r"total compute estimate overflowed"):
-        analyze_plan(graph, replace(plan, schedule=invalid_schedule))
+def test_scheduled_node_rejects_inconsistent_compute_time(demo_plan):
+    _, plan = demo_plan
+    with pytest.raises(PlanningError, match=r"finish_ms must equal"):
+        replace(plan.schedule[0], compute_ms=1e308)
 
 
-def test_analysis_rejects_nonfinite_compute_utilization(demo_plan):
-    graph, plan = demo_plan
-    invalid_schedule = tuple(
-        replace(item, finish_ms=1e-308, compute_ms=1e308 if index == 0 else item.compute_ms)
-        for index, item in enumerate(plan.schedule)
-    )
-    invalid = replace(plan, schedule=invalid_schedule)
-    with pytest.raises(PlanningError, match=r"compute utilization is not finite"):
-        analyze_plan(graph, invalid)
+def test_scheduled_node_replace_rechecks_interval(demo_plan):
+    _, plan = demo_plan
+    with pytest.raises(PlanningError, match=r"finish_ms must equal"):
+        replace(plan.schedule[0], finish_ms=1e-308, compute_ms=1e308)
 
 
-def test_analysis_rejects_nonfinite_memory_utilization(demo_plan):
-    graph, plan = demo_plan
-    invalid = replace(plan, memory_used_mb={**plan.memory_used_mb, "cpu": float("inf")})
-    with pytest.raises(PlanningError, match=r"memory utilization is not finite"):
-        analyze_plan(graph, invalid)
+def test_plan_replace_rechecks_memory_summary(demo_plan):
+    _, plan = demo_plan
+    with pytest.raises(PlanningError, match=r"memory used.*must be finite"):
+        replace(plan, memory_used_mb={**plan.memory_used_mb, "cpu": float("inf")})
 
 
 def test_analysis_rejects_overflowing_transfer_total(demo_plan, monkeypatch):

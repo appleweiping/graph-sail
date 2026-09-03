@@ -1,0 +1,41 @@
+{
+  "environment": {
+    "executable_bits": 64,
+    "implementation": "CPython",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.5"
+  },
+  "planners": [
+    {
+      "algorithm": "greedy-earliest-finish",
+      "makespan_ms": 53.135,
+      "median_runtime_ms": 0.863,
+      "p95_runtime_ms": 5.1147,
+      "plan_sha256": "cc36e56c63249849af709daeefba7f5b3e51394f2982d0e9ad2588ad406bbe5f",
+      "relative_makespan": 1.0,
+      "repeats": 7
+    },
+    {
+      "algorithm": "beam-earliest-finish:16",
+      "makespan_ms": 53.135,
+      "median_runtime_ms": 1.0578,
+      "p95_runtime_ms": 1.159,
+      "plan_sha256": "de03747ba13da48c908c4f55dd99ebf6a8c58fa35811c2726cd250ad1755f5c9",
+      "relative_makespan": 1.0,
+      "repeats": 7
+    }
+  ],
+  "protocol": {
+    "clock": "perf_counter_ns",
+    "quality_metric": "estimated makespan_ms; lower is better",
+    "runtime_scope": "planner.plan only",
+    "warmups": 2
+  },
+  "schema_version": 1,
+  "workload": {
+    "edge_count": 5,
+    "graph_name": "multimodal-assistant",
+    "graph_sha256": "118ad1aa16c8ee13c1b6621be868abca150c96714f7b3d2168f4ea98bd80da54",
+    "node_count": 6
+  }
+}
