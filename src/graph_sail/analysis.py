@@ -50,11 +50,11 @@ def analyze_plan(graph: GraphSpec, plan: PlanResult) -> PlanMetrics:
     for item in plan.schedule:
         device_compute[item.device] += item.compute_ms
     utilization: dict[str, float] = {}
-    for device, value in device_compute.items():
+    for device_name, value in device_compute.items():
         usage = value / makespan if makespan else 0.0
         if not math.isfinite(usage):
-            raise PlanningError(f"compute utilization is not finite for device {device!r}")
-        utilization[device] = usage
+            raise PlanningError(f"compute utilization is not finite for device {device_name!r}")
+        utilization[device_name] = usage
     memory: dict[str, float] = {}
     for device in graph.devices:
         usage = plan.memory_used_mb.get(device.name, 0.0) / device.memory_mb

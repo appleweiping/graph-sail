@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from graph_sail.errors import PlanningError
@@ -72,18 +73,14 @@ class GreedyPlanner:
                 _evaluate_candidate(graph, node, device, state, incoming[node_id], link_index)
                 for device in devices
             )
-            feasible = [item for item in evaluated if item.scheduled is not None]
+            feasible = [item.scheduled for item in evaluated if item.scheduled is not None]
             if not feasible:
                 raise _no_placement_error(node, evaluated)
             chosen = min(
                 feasible,
-                key=lambda item: (
-                    item.scheduled.finish_ms,  # type: ignore[union-attr]
-                    item.scheduled.start_ms,  # type: ignore[union-attr]
-                    item.scheduled.device,  # type: ignore[union-attr]
-                ),
+                key=lambda item: (item.finish_ms, item.start_ms, item.device),
             )
-            state = _extend_state(state, chosen.scheduled, tuple(item.trace for item in evaluated))
+            state = _extend_state(state, chosen, tuple(item.trace for item in evaluated))
         return _to_result(graph, state, self.name)
 
 
@@ -139,7 +136,7 @@ def _evaluate_candidate(
     device: DeviceSpec,
     state: _PlanState,
     incoming_edges: tuple[EdgeSpec, ...],
-    link_index: dict[tuple[str, str], LinkSpec],
+    link_index: Mapping[tuple[str, str], LinkSpec],
 ) -> _EvaluatedCandidate:
     if not node.can_run_on(device):
         return _EvaluatedCandidate(

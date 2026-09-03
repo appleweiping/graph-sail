@@ -98,7 +98,7 @@ class CalibrationResult:
                 pair = tuple(item)
             except TypeError as exc:
                 raise ValueError("ignored_cells must contain node/device pairs") from exc
-            ignored.append(pair)  # type: ignore[arg-type]
+            ignored.append(pair)
         object.__setattr__(self, "cells", cells)
         object.__setattr__(self, "ignored_cells", tuple(ignored))
         _validate_result(self)

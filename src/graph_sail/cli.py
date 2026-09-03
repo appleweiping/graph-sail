@@ -93,18 +93,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "benchmark":
             graph = load_graph(args.graph)
-            result = benchmark_graph(
+            benchmark_result = benchmark_graph(
                 graph,
                 repeats=args.repeats,
                 warmups=args.warmups,
                 beam_width=args.beam_width,
             )
-            output = write_benchmark(result, args.output)
-            print(f"benchmarked {len(graph.nodes)} nodes with {len(result.planners)} baselines")
-            for planner in result.planners:
+            output = write_benchmark(benchmark_result, args.output)
+            summaries = benchmark_result.planners
+            print(f"benchmarked {len(graph.nodes)} nodes with {len(summaries)} baselines")
+            for summary in summaries:
                 print(
-                    f"  {planner.algorithm:<24} makespan={planner.makespan_ms:.3f} ms "
-                    f"median-runtime={planner.median_runtime_ms:.3f} ms"
+                    f"  {summary.algorithm:<24} makespan={summary.makespan_ms:.3f} ms "
+                    f"median-runtime={summary.median_runtime_ms:.3f} ms"
                 )
             print(f"  {'result':<24} {output}")
             return 0
