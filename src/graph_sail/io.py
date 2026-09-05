@@ -10,6 +10,8 @@ from typing import Any
 
 from graph_sail.errors import ValidationError
 from graph_sail.limits import (
+    MAX_BATCH_SIZE,
+    MAX_COTENANTS,
     MAX_DEVICES,
     MAX_EDGES,
     MAX_INPUT_BYTES,
@@ -19,7 +21,15 @@ from graph_sail.limits import (
     MAX_NODES,
     MAX_TEXT_LENGTH,
 )
-from graph_sail.models import DeviceSpec, EdgeSpec, GraphSpec, LinkSpec, NodeSpec
+from graph_sail.models import (
+    BatchSpec,
+    ContentionSpec,
+    DeviceSpec,
+    EdgeSpec,
+    GraphSpec,
+    LinkSpec,
+    NodeSpec,
+)
 
 _TOP_LEVEL_FIELDS = {
     "name",
@@ -99,12 +109,29 @@ def graph_from_dict(payload: Any) -> GraphSpec:
 
 def _parse_device(payload: Any, path: str) -> DeviceSpec:
     item = _mapping(payload, path)
-    _reject_unknown(item, {"name", "memory_mb", "kinds"}, path)
+    _reject_unknown(item, {"name", "memory_mb", "kinds", "contention"}, path)
+    contention = item.get("contention")
     return DeviceSpec(
         name=_text(item.get("name"), f"{path}.name"),
         memory_mb=_positive_number(item.get("memory_mb"), f"{path}.memory_mb"),
         kinds=frozenset(
             _string_list(item.get("kinds", []), f"{path}.kinds", maximum=MAX_KINDS_PER_DEVICE)
+        ),
+        contention=(
+            None if contention is None else _parse_contention(contention, f"{path}.contention")
+        ),
+    )
+
+
+def _parse_contention(payload: Any, path: str) -> ContentionSpec:
+    item = _mapping(payload, path)
+    _reject_unknown(item, {"slowdown_per_cotenant", "max_cotenants"}, path)
+    return ContentionSpec(
+        slowdown_per_cotenant=_nonnegative_number(
+            item.get("slowdown_per_cotenant"), f"{path}.slowdown_per_cotenant"
+        ),
+        max_cotenants=_count(
+            item.get("max_cotenants"), f"{path}.max_cotenants", minimum=1, maximum=MAX_COTENANTS
         ),
     )
 
@@ -113,7 +140,7 @@ def _parse_node(payload: Any, path: str) -> NodeSpec:
     item = _mapping(payload, path)
     _reject_unknown(
         item,
-        {"id", "kind", "memory_mb", "latency_ms", "allowed_devices", "pinned_device"},
+        {"id", "kind", "memory_mb", "latency_ms", "allowed_devices", "pinned_device", "batch"},
         path,
     )
     raw_latencies = _mapping(item.get("latency_ms"), f"{path}.latency_ms")
@@ -135,6 +162,7 @@ def _parse_node(payload: Any, path: str) -> NodeSpec:
     pinned = item.get("pinned_device")
     if pinned is not None:
         pinned = _text(pinned, f"{path}.pinned_device")
+    batch = item.get("batch")
     return NodeSpec(
         id=_text(item.get("id"), f"{path}.id"),
         kind=_text(item.get("kind"), f"{path}.kind"),
@@ -148,6 +176,17 @@ def _parse_node(payload: Any, path: str) -> NodeSpec:
             )
         ),
         pinned_device=pinned,
+        batch=None if batch is None else _parse_batch(batch, f"{path}.batch"),
+    )
+
+
+def _parse_batch(payload: Any, path: str) -> BatchSpec:
+    item = _mapping(payload, path)
+    _reject_unknown(item, {"size", "window_ms", "fixed_fraction"}, path)
+    return BatchSpec(
+        size=_count(item.get("size"), f"{path}.size", minimum=1, maximum=MAX_BATCH_SIZE),
+        window_ms=_nonnegative_number(item.get("window_ms", 0.0), f"{path}.window_ms"),
+        fixed_fraction=_fraction(item.get("fixed_fraction"), f"{path}.fixed_fraction"),
     )
 
 
@@ -247,6 +286,21 @@ def _nonnegative_number(value: Any, path: str) -> float:
     if number < 0:
         raise ValidationError(f"{path} must be zero or greater")
     return number
+
+
+def _fraction(value: Any, path: str) -> float:
+    number = _nonnegative_number(value, path)
+    if number > 1:
+        raise ValidationError(f"{path} must be between zero and one")
+    return number
+
+
+def _count(value: Any, path: str, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError(f"{path} must be an integer")
+    if not minimum <= value <= maximum:
+        raise ValidationError(f"{path} must be an integer from {minimum} to {maximum}")
+    return value
 
 
 def _string_list(value: Any, path: str, *, maximum: int) -> tuple[str, ...]:

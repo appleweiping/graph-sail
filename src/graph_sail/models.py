@@ -11,6 +11,8 @@ from typing import Any, TypeVar
 
 from graph_sail.errors import PlanningError, ValidationError
 from graph_sail.limits import (
+    MAX_BATCH_SIZE,
+    MAX_COTENANTS,
     MAX_DEVICES,
     MAX_EDGES,
     MAX_KINDS_PER_DEVICE,
@@ -65,6 +67,21 @@ def _number(
     return number
 
 
+def _count(value: Any, label: str, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError(f"{label} must be an integer")
+    if not minimum <= value <= maximum:
+        raise ValidationError(f"{label} must be an integer from {minimum} to {maximum}")
+    return value
+
+
+def _fraction(value: Any, label: str) -> float:
+    number = _number(value, label)
+    if number > 1:
+        raise ValidationError(f"{label} must be between zero and one")
+    return number
+
+
 def _bounded_tuple(
     value: Any, label: str, item_type: type[_T], limit: int, *, output: bool = False
 ) -> tuple[_T, ...]:
@@ -90,12 +107,51 @@ def _string_set(value: Any, label: str, limit: int) -> frozenset[str]:
 
 
 @dataclass(frozen=True, slots=True)
+class ContentionSpec:
+    """A caller-fitted linear co-residency slowdown for one device.
+
+    ``slowdown_per_cotenant`` is the fractional latency increase each additional
+    resident component adds, and ``max_cotenants`` is the co-residency count above
+    which the caller's linear fit is no longer claimed to hold, so the model
+    saturates instead of extrapolating.
+    """
+
+    slowdown_per_cotenant: float
+    max_cotenants: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "slowdown_per_cotenant",
+            _number(self.slowdown_per_cotenant, "contention slowdown_per_cotenant"),
+        )
+        object.__setattr__(
+            self,
+            "max_cotenants",
+            _count(
+                self.max_cotenants, "contention max_cotenants", minimum=1, maximum=MAX_COTENANTS
+            ),
+        )
+
+    def factor(self, cotenants: int) -> float:
+        """Return the multiplier applied to an isolated latency estimate."""
+
+        if isinstance(cotenants, bool) or not isinstance(cotenants, int) or cotenants < 0:
+            raise PlanningError("cotenants must be a non-negative integer")
+        factor = 1.0 + self.slowdown_per_cotenant * min(cotenants, self.max_cotenants)
+        if not math.isfinite(factor):
+            raise PlanningError("contention factor overflowed")
+        return factor
+
+
+@dataclass(frozen=True, slots=True)
 class DeviceSpec:
     """A compute device with a persistent model-memory budget."""
 
     name: str
     memory_mb: float
     kinds: frozenset[str] = field(default_factory=frozenset)
+    contention: ContentionSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", _text(self.name, "device name"))
@@ -105,11 +161,51 @@ class DeviceSpec:
         object.__setattr__(
             self, "kinds", _string_set(self.kinds, "device kinds", MAX_KINDS_PER_DEVICE)
         )
+        if self.contention is not None and not isinstance(self.contention, ContentionSpec):
+            raise ValidationError("device contention must be a ContentionSpec")
 
     def supports(self, kind: str) -> bool:
         """Return whether this device accepts a node kind."""
 
         return not self.kinds or kind in self.kinds
+
+    def contention_factor(self, cotenants: int) -> float:
+        """Return the co-residency slowdown for a device without a model as 1.0."""
+
+        if self.contention is None:
+            return 1.0
+        return self.contention.factor(cotenants)
+
+
+@dataclass(frozen=True, slots=True)
+class BatchSpec:
+    """A caller-declared request batch for one node.
+
+    The caller asserts that ``size`` requests accumulate within ``window_ms`` and
+    that ``fixed_fraction`` of the isolated ``latency_ms`` estimate is
+    per-invocation overhead that a batch amortises, the remainder scaling with
+    the number of requests.
+    """
+
+    size: int
+    window_ms: float
+    fixed_fraction: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "size",
+            _count(self.size, "batch size", minimum=1, maximum=MAX_BATCH_SIZE),
+        )
+        object.__setattr__(self, "window_ms", _number(self.window_ms, "batch window_ms"))
+        object.__setattr__(
+            self, "fixed_fraction", _fraction(self.fixed_fraction, "batch fixed_fraction")
+        )
+
+    def factor(self) -> float:
+        """Return the per-request multiplier for the isolated latency estimate."""
+
+        return 1.0 - self.fixed_fraction * (1.0 - 1.0 / self.size)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +218,7 @@ class NodeSpec:
     latency_ms: Mapping[str, float]
     allowed_devices: frozenset[str] = field(default_factory=frozenset)
     pinned_device: str | None = None
+    batch: BatchSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _text(self.id, "node id"))
@@ -151,6 +248,22 @@ class NodeSpec:
             object.__setattr__(
                 self, "pinned_device", _text(self.pinned_device, "node pinned_device")
             )
+        if self.batch is not None and not isinstance(self.batch, BatchSpec):
+            raise ValidationError("node batch must be a BatchSpec")
+
+    def batch_factor(self) -> float:
+        """Return the batch amortisation for a node without a batch model as 1.0."""
+
+        if self.batch is None:
+            return 1.0
+        return self.batch.factor()
+
+    def batch_window_ms(self) -> float:
+        """Return the batch-formation delay charged before this node can start."""
+
+        if self.batch is None:
+            return 0.0
+        return self.batch.window_ms
 
     def can_run_on(self, device: DeviceSpec) -> bool:
         """Return whether static constraints permit this placement."""
@@ -276,7 +389,7 @@ class GraphSpec:
         if not all(isinstance(item, LinkSpec) for item in self.links):
             raise ValidationError("links entries must be LinkSpec instances")
         for device in self.devices:
-            DeviceSpec(device.name, device.memory_mb, device.kinds)
+            DeviceSpec(device.name, device.memory_mb, device.kinds, device.contention)
         for node in self.nodes:
             NodeSpec(
                 node.id,
@@ -285,6 +398,7 @@ class GraphSpec:
                 node.latency_ms,
                 node.allowed_devices,
                 node.pinned_device,
+                node.batch,
             )
         for edge in self.edges:
             EdgeSpec(edge.source, edge.target, edge.payload_mb, edge.label)
@@ -455,6 +569,8 @@ class ScheduledNode:
     compute_ms: float
     incoming_transfer_ms: float
     memory_mb: float
+    latency_scale: float = 1.0
+    batch_window_ms: float = 0.0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "node", _text(self.node, "scheduled node", output=True))
@@ -465,14 +581,22 @@ class ScheduledNode:
             "compute_ms",
             "incoming_transfer_ms",
             "memory_mb",
+            "batch_window_ms",
         ):
             object.__setattr__(
                 self, field_name, _number(getattr(self, field_name), field_name, output=True)
             )
+        object.__setattr__(
+            self,
+            "latency_scale",
+            _number(self.latency_scale, "latency_scale", positive=True, output=True),
+        )
         if not math.isclose(
             self.finish_ms, self.start_ms + self.compute_ms, rel_tol=1e-12, abs_tol=1e-9
         ):
             raise PlanningError("scheduled finish_ms must equal start_ms plus compute_ms")
+        if self.start_ms + _EPSILON < self.batch_window_ms:
+            raise PlanningError("scheduled start_ms must not precede its batch window")
 
 
 @dataclass(frozen=True, slots=True)
@@ -565,6 +689,12 @@ class PlanResult:
                     "compute_ms": item.compute_ms,
                     "incoming_transfer_ms": item.incoming_transfer_ms,
                     "memory_mb": item.memory_mb,
+                    **({"latency_scale": item.latency_scale} if item.latency_scale != 1.0 else {}),
+                    **(
+                        {"batch_window_ms": item.batch_window_ms}
+                        if item.batch_window_ms != 0.0
+                        else {}
+                    ),
                 }
                 for item in self.schedule
             ],

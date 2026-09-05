@@ -4,6 +4,21 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in device contention modelling: a device may declare a linear co-residency slowdown that
+  rescales the caller's isolated latency estimate, changing placement when a device is loaded.
+- Opt-in request batching: a node may declare a batch size, formation window, and fixed-cost
+  fraction, amortising the caller's estimate under the affine batch cost model and charging the
+  window as start latency.
+- `latency_scale` and `batch_window_ms` on scheduled nodes, emitted in `plan.json` and the HTML
+  report only when a latency model actually applied, so unmodelled plans are byte-identical.
+
+### Changed
+
+- `docs/architecture.md` no longer assumes node latency is independent of batching and contention;
+  the schedule assumptions, both model definitions, and their limits are stated explicitly.
+
 ## [0.2.0] - 2026-09-01
 
 ### Added

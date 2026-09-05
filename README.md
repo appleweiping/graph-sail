@@ -44,6 +44,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Strict, typo-resistant JSON input contract.
 - Image, audio, language, decoder, post-processing, or custom node kinds.
 - Per-device latency estimates, persistent memory budgets, allowlists, and pinned nodes.
+- Opt-in device-contention and request-batching latency modelling from explicitly declared
+  parameters.
 - Directed link bandwidth and fixed-latency estimates with explicit fallbacks.
 - Stable topological ordering and concrete cycle diagnostics.
 - Fast deterministic greedy planner.
@@ -160,8 +162,15 @@ schedule. The full cost model and complexity are documented in [architecture.md]
 
 Graph Sail plans from numbers you provide. It does not benchmark hardware and its output is not a
 throughput or service-level guarantee. Current schedules assume one node at a time per device,
-persistent component memory, and non-contended transfers. Dynamic batching, kernels that overlap,
-shared tenancy, power limits, and network contention require measurement or a richer simulator.
+persistent component memory, and non-contended transfers. Kernels that overlap, power limits, and
+network contention require measurement or a richer simulator.
+
+Contention and batching are modelled only when a device or node declares them, and only as the
+linear co-residency slowdown and affine batch amortisation documented in
+[architecture.md](docs/architecture.md). Both models consume parameters you fitted elsewhere. Graph
+Sail measures no interference of its own and has no request-arrival model, so a contended or batched
+plan is an estimate built on an estimate: it is not a measurement of shared hardware, and a batched
+makespan is still a latency estimate rather than a throughput figure.
 
 The decision trace is designed to expose these assumptions instead of hiding them behind a single
 score.

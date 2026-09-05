@@ -28,7 +28,9 @@ calibrator uses the sample median for each node/device cell and writes:
 - `calibration.json`: sample count, median, minimum, and maximum for each replaced cell.
 
 The command never infers memory or network transfer from component latency. Those quantities require
-separate instrumentation and remain unchanged.
+separate instrumentation and remain unchanged. Declared device `contention` and node `batch`
+parameters are likewise carried through untouched: they are model inputs the caller fits with its own
+experiment, and no latency observation can create or revise them.
 
 ```bash
 graph-sail calibrate examples/demo-output/graph.json examples/measurements.jsonl \
@@ -70,7 +72,8 @@ describe only that host and run; they are neither a portable speed baseline nor 
 The public boundary rejects work before it can grow without bound: graph and observation files are
 limited to 16 MiB, observation JSONL to 100,000 records, labels to 1,024 characters, inventories to
 1,024 devices and 10,000 nodes, dependency/link collections to 100,000 entries each, and latency
-profiles to 1,024 cells per node. Beam width is capped at 4,096. Planning and benchmark commands also
+profiles to 1,024 cells per node. Contention models saturate at 1,024 co-tenants and batch sizes are
+limited to 100,000. Beam width is capped at 4,096. Planning and benchmark commands also
 estimate candidate expansions and reject requests above fixed work budgets. These are safety
 ceilings, not recommended production sizes; algorithmic cost and memory may become material earlier.
 

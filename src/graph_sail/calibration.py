@@ -227,6 +227,16 @@ def graph_to_dict(graph: GraphSpec) -> dict[str, Any]:
                 "name": device.name,
                 "memory_mb": device.memory_mb,
                 **({"kinds": sorted(device.kinds)} if device.kinds else {}),
+                **(
+                    {
+                        "contention": {
+                            "slowdown_per_cotenant": device.contention.slowdown_per_cotenant,
+                            "max_cotenants": device.contention.max_cotenants,
+                        }
+                    }
+                    if device.contention is not None
+                    else {}
+                ),
             }
             for device in graph.devices
         ],
@@ -242,6 +252,17 @@ def graph_to_dict(graph: GraphSpec) -> dict[str, Any]:
                     else {}
                 ),
                 **({"pinned_device": node.pinned_device} if node.pinned_device is not None else {}),
+                **(
+                    {
+                        "batch": {
+                            "size": node.batch.size,
+                            "window_ms": node.batch.window_ms,
+                            "fixed_fraction": node.batch.fixed_fraction,
+                        }
+                    }
+                    if node.batch is not None
+                    else {}
+                ),
             }
             for node in graph.nodes
         ],

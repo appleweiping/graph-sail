@@ -131,6 +131,7 @@ def render_html(graph: GraphSpec, plan: PlanResult, metrics: PlanMetrics | None 
         for device in devices
     )
     chain = " → ".join(metrics.critical_chain) or "none"
+    modelling = _modelling_section(plan)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -175,13 +176,39 @@ def render_html(graph: GraphSpec, plan: PlanResult, metrics: PlanMetrics | None 
     {memory_cards}
   </div>
   <section><h2>Schedule</h2>{"".join(svg)}</section>
-  <section><h2>Critical chain</h2><p><code>{html.escape(chain)}</code></p></section>
+  <section><h2>Critical chain</h2><p><code>{html.escape(chain)}</code></p></section>{modelling}
   <section><h2>Node detail</h2><table><thead><tr>
     <th>Node</th><th>Device</th><th>Start ms</th><th>Finish ms</th>
     <th>Transfer ms</th><th>Memory MB</th>
   </tr></thead><tbody>{schedule_rows}</tbody></table></section>
 </main></body></html>
 """
+
+
+def _modelling_section(plan: PlanResult) -> str:
+    """Render the latency-model section, or nothing when no model is configured."""
+
+    rows = [
+        item for item in plan.schedule if item.latency_scale != 1.0 or item.batch_window_ms != 0.0
+    ]
+    if not rows:
+        return ""
+    body = "".join(
+        "<tr>"
+        f"<td>{html.escape(item.node)}</td><td>{html.escape(item.device)}</td>"
+        f"<td>{item.compute_ms / item.latency_scale:.3f}</td>"
+        f"<td>{item.compute_ms:.3f}</td><td>{item.latency_scale:.4f}</td>"
+        f"<td>{item.batch_window_ms:.3f}</td>"
+        "</tr>"
+        for item in rows
+    )
+    return (
+        '<section><h2>Latency modelling</h2><p class="subtitle">Configured contention and '
+        "batching rescale the caller&#x27;s isolated estimate and delay batched starts. These "
+        "are declared model parameters, not measurements of this deployment.</p><table><thead>"
+        "<tr><th>Node</th><th>Device</th><th>Isolated ms</th><th>Effective ms</th><th>Scale</th>"
+        f"<th>Batch window ms</th></tr></thead><tbody>{body}</tbody></table></section>"
+    )
 
 
 def _metrics_dict(metrics: PlanMetrics) -> dict[str, Any]:

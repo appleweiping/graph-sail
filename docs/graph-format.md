@@ -17,10 +17,20 @@ numbers, and names that become duplicates after whitespace normalization are als
 ## Device
 
 ```json
-{"name": "gpu-0", "memory_mb": 16000, "kinds": ["vision", "language"]}
+{
+  "name": "gpu-0",
+  "memory_mb": 16000,
+  "kinds": ["vision", "language"],
+  "contention": {"slowdown_per_cotenant": 0.12, "max_cotenants": 3}
+}
 ```
 
 An empty or omitted `kinds` array means no kind restriction.
+
+`contention` is optional and opts the device in to the co-residency latency model described in
+[architecture.md](architecture.md). `slowdown_per_cotenant` is a number of zero or greater and
+`max_cotenants` is an integer from 1 to 1024. Omit the object entirely to keep the caller's isolated
+latency estimates unchanged.
 
 ## Node
 
@@ -31,12 +41,18 @@ An empty or omitted `kinds` array means no kind restriction.
   "memory_mb": 2900,
   "latency_ms": {"gpu-0": 11.0, "gpu-1": 13.0},
   "allowed_devices": ["gpu-0", "gpu-1"],
-  "pinned_device": null
+  "pinned_device": null,
+  "batch": {"size": 4, "window_ms": 2.0, "fixed_fraction": 0.6}
 }
 ```
 
 `latency_ms` controls actual eligibility: a device must be present in this mapping. `allowed_devices`
 is an optional additional restriction. `pinned_device` restricts a node to exactly one device.
+
+`batch` is optional and opts the node in to the batch model described in
+[architecture.md](architecture.md). `size` is an integer from 1 to 100000, `window_ms` is a number of
+zero or greater and defaults to `0`, and `fixed_fraction` is a number from 0 to 1. Omit the object
+entirely to keep the caller's isolated latency estimates unchanged.
 
 ## Edge and link
 

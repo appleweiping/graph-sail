@@ -83,8 +83,12 @@ def critical_chain(graph: GraphSpec, plan: PlanResult) -> tuple[str, ...]:
     for edge in graph.edges:
         source = by_node[edge.source]
         target = by_node[edge.target]
-        ready = source.finish_ms + graph.transfer_ms(
-            source.device, target.device, edge.payload_mb, _link_index=link_index
+        ready = (
+            source.finish_ms
+            + graph.transfer_ms(
+                source.device, target.device, edge.payload_mb, _link_index=link_index
+            )
+            + target.batch_window_ms
         )
         if not math.isfinite(ready):
             raise PlanningError(f"critical-chain time overflowed for node {target.node!r}")

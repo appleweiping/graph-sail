@@ -30,6 +30,7 @@ class _PlanState:
     by_node: dict[str, ScheduledNode]
     memory_used: dict[str, float]
     device_ready: dict[str, float]
+    cotenants: dict[str, int]
     decisions: tuple[PlacementDecision, ...]
 
     @classmethod
@@ -39,6 +40,7 @@ class _PlanState:
             by_node={},
             memory_used={device.name: 0.0 for device in graph.devices},
             device_ready={device.name: 0.0 for device in graph.devices},
+            cotenants={device.name: 0 for device in graph.devices},
             decisions=(),
         )
 
@@ -174,8 +176,10 @@ def _evaluate_candidate(
             raise PlanningError(f"incoming transfer total overflowed for node {node.id!r}")
         dependency_ready = max(dependency_ready, predecessor.finish_ms + transfer)
 
-    start = max(state.device_ready[device.name], dependency_ready)
-    compute = node.latency_ms[device.name]
+    window = node.batch_window_ms()
+    start = max(state.device_ready[device.name], dependency_ready + window)
+    scale = device.contention_factor(state.cotenants[device.name]) * node.batch_factor()
+    compute = node.latency_ms[device.name] * scale
     finish = start + compute
     if not math.isfinite(start) or not math.isfinite(finish):
         raise PlanningError(
@@ -189,6 +193,8 @@ def _evaluate_candidate(
         compute_ms=compute,
         incoming_transfer_ms=transfer_total,
         memory_mb=node.memory_mb,
+        latency_scale=scale,
+        batch_window_ms=window,
     )
     return _EvaluatedCandidate(
         trace=CandidateTrace(
@@ -228,6 +234,8 @@ def _extend_state(
     memory[scheduled.device] += scheduled.memory_mb
     ready = dict(state.device_ready)
     ready[scheduled.device] = scheduled.finish_ms
+    cotenants = dict(state.cotenants)
+    cotenants[scheduled.device] += 1
     decision = PlacementDecision(
         node=scheduled.node,
         selected_device=scheduled.device,
@@ -238,6 +246,7 @@ def _extend_state(
         by_node=by_node,
         memory_used=memory,
         device_ready=ready,
+        cotenants=cotenants,
         decisions=(*state.decisions, decision),
     )
 
