@@ -152,6 +152,21 @@ allowlist, pinning, missing latency, or memory. Feasible candidates include star
 incoming-transfer estimates. The report can therefore answer both “where was this placed?” and “why
 was the alternative rejected?”
 
+## Local execution boundary
+
+`execution.py` accepts a validated graph, an explicit placement map and a trusted
+callable registry. It checks complete coverage, node/device compatibility and
+persistent-memory admission before starting a thread pool. Dependency-ready
+queues submit actual callable invocations under global and per-device slot
+limits; successors receive the successful return objects. Application exceptions,
+bounded retries and cooperative cancellation produce terminal status and attempt
+records. Timings use a monotonic clock and do not reuse estimated schedule times.
+
+Logical resource admission does not allocate GPUs or enforce physical RAM usage.
+Output values remain shared in-process objects. Cancellation stops new work and
+joins running callables; a noncooperating callable can exceed its requested time
+budget. See [Local execution](local-execution.md) for the complete contract.
+
 ## Experimental boundary
 
 Calibration is a separate pure transformation before planning. It replaces only explicitly observed

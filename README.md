@@ -58,6 +58,22 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Standard-library runtime: no GPU, model weights, service, or network access required.
 - Profiler-neutral JSONL calibration with median aggregation and explicit provenance.
 - Reproducible greedy-versus-beam benchmark JSON with plan digests and host metadata.
+- Real local DAG execution through an explicit trusted callable registry, with
+  dependency return values, bounded per-device concurrency and measured timings.
+
+## Run registered local functions
+
+```bash
+python examples/execute_graph.py
+```
+
+`execute_graph(graph, registry, placements)` invokes the Python functions you
+register, waits for their dependencies, and returns their actual values plus
+per-attempt status/timing records. Resource admission follows the graph's logical
+device and persistent-memory declarations. Application retries and cooperative
+cancellation are explicit options. See [Local execution](docs/local-execution.md)
+for the API, shared-object semantics and time-budget behavior. Planning and
+`simulate_plan` continue to report estimates independently of these observations.
 
 ## Installation
 
