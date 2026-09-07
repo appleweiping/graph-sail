@@ -16,6 +16,12 @@ from graph_sail.graph import topological_order
 from graph_sail.io import load_graph
 from graph_sail.planner import BeamPlanner, GreedyPlanner
 from graph_sail.report import write_report_bundle
+from graph_sail.sensitivity import (
+    DEFAULT_MAX_FACTOR,
+    DEFAULT_MIN_FACTOR,
+    DEFAULT_TOLERANCE,
+    analyze_sensitivity,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +59,32 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--repeats", type=int, default=7)
     benchmark.add_argument("--warmups", type=int, default=1)
     benchmark.add_argument("--beam-width", type=int, default=16)
+
+    sensitivity = subparsers.add_parser(
+        "sensitivity", help="report how much the plan depends on each estimate"
+    )
+    sensitivity.add_argument("graph", type=Path)
+    sensitivity.add_argument("--output", type=Path, default=Path("sensitivity.json"))
+    sensitivity.add_argument("--algorithm", choices=("greedy", "beam"), default="beam")
+    sensitivity.add_argument("--beam-width", type=int, default=16)
+    sensitivity.add_argument(
+        "--max-factor",
+        type=float,
+        default=DEFAULT_MAX_FACTOR,
+        help="largest multiplier searched when an estimate is made worse",
+    )
+    sensitivity.add_argument(
+        "--min-factor",
+        type=float,
+        default=DEFAULT_MIN_FACTOR,
+        help="smallest multiplier searched when an estimate is made better",
+    )
+    sensitivity.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_TOLERANCE,
+        help="relative width at which the flip-point search stops",
+    )
 
     demo = subparsers.add_parser("demo", help="run the built-in multimodal graph")
     demo.add_argument("--output", type=Path, default=Path("demo-output"))
@@ -108,6 +140,42 @@ def main(argv: list[str] | None = None) -> int:
                     f"median-runtime={summary.median_runtime_ms:.3f} ms"
                 )
             print(f"  {'result':<24} {output}")
+            return 0
+        if args.command == "sensitivity":
+            graph = load_graph(args.graph)
+            planner = _planner(args.algorithm, args.beam_width)
+            report = analyze_sensitivity(
+                graph,
+                planner.plan(graph),
+                planner,
+                max_factor=args.max_factor,
+                min_factor=args.min_factor,
+                tolerance=args.tolerance,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(
+                json.dumps(report.as_dict(), indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            print(
+                f"probed {len(report.makespan)} estimates against "
+                f"{report.baseline_makespan_ms:.3f} ms"
+            )
+            weakest = report.weakest
+            if weakest is not None and weakest.margin is not None:
+                print(
+                    f"  weakest estimate: {weakest.node} on {weakest.device} changes the "
+                    f"placement at {weakest.margin:.0%}"
+                )
+            else:
+                print(
+                    "  no estimate changed the placement inside the searched range, "
+                    "which is not the same as none being able to"
+                )
+            if report.load_bearing:
+                print(f"  worth re-measuring: {', '.join(report.load_bearing)}")
+            print(f"  {'result':<24} {args.output}")
             return 0
         if args.command == "demo":
             graph = demo_graph()
