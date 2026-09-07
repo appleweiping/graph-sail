@@ -36,9 +36,7 @@ class ExactPlanner:
             or not isinstance(max_states, int)
             or not 1 <= max_states <= MAX_EXACT_STATES
         ):
-            raise ValueError(
-                f"max_states must be an integer from 1 to {MAX_EXACT_STATES}"
-            )
+            raise ValueError(f"max_states must be an integer from 1 to {MAX_EXACT_STATES}")
         self.max_states = max_states
 
     def plan(self, graph: GraphSpec) -> PlanResult:
