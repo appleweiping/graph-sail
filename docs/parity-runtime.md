@@ -49,8 +49,8 @@ documented in [Local execution](local-execution.md). Entire-reference parity
 remains open until the missing subsystems, contracts and scale evidence are
 implemented and verified.
 
-Local verification for this increment (Windows, Python 3.12.13): 380 repository
-tests passed, including 46 focused execution tests. Branch-aware repository
+Local verification for this increment (Windows, Python 3.12.13): 381 repository
+tests passed, including 47 focused execution tests. Branch-aware repository
 coverage was 96.68% against the 95% gate; the execution module reached 99%.
 Ruff lint/format, strict Mypy, Bandit, wheel/sdist build and Twine checks passed.
 These are local results; no remote CI or distributed benchmark result is implied.
