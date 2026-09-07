@@ -12,6 +12,7 @@ from graph_sail.benchmark import benchmark_graph, write_benchmark
 from graph_sail.calibration import calibrate_graph, load_observations, write_calibration_bundle
 from graph_sail.demo import demo_graph, demo_payload
 from graph_sail.errors import GraphSailError
+from graph_sail.exact import ExactPlanner
 from graph_sail.graph import topological_order
 from graph_sail.io import load_graph
 from graph_sail.planner import BeamPlanner, GreedyPlanner
@@ -39,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan = subparsers.add_parser("plan", help="place a graph and write a report bundle")
     plan.add_argument("graph", type=Path)
     plan.add_argument("--output", type=Path, default=Path("graph-sail-output"))
-    plan.add_argument("--algorithm", choices=("greedy", "beam"), default="beam")
+    plan.add_argument("--algorithm", choices=("greedy", "beam", "exact"), default="beam")
     plan.add_argument("--beam-width", type=int, default=16)
 
     calibrate = subparsers.add_parser(
@@ -66,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sensitivity.add_argument("graph", type=Path)
     sensitivity.add_argument("--output", type=Path, default=Path("sensitivity.json"))
-    sensitivity.add_argument("--algorithm", choices=("greedy", "beam"), default="beam")
+    sensitivity.add_argument("--algorithm", choices=("greedy", "beam", "exact"), default="beam")
     sensitivity.add_argument("--beam-width", type=int, default=16)
     sensitivity.add_argument(
         "--max-factor",
@@ -205,9 +206,11 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
-def _planner(algorithm: str, beam_width: int) -> GreedyPlanner | BeamPlanner:
+def _planner(algorithm: str, beam_width: int) -> GreedyPlanner | BeamPlanner | ExactPlanner:
     if algorithm == "greedy":
         return GreedyPlanner()
+    if algorithm == "exact":
+        return ExactPlanner()
     return BeamPlanner(beam_width=beam_width)
 
 

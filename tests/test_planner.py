@@ -4,6 +4,7 @@ import pytest
 
 from graph_sail.demo import demo_graph, demo_payload
 from graph_sail.errors import PlanningError
+from graph_sail.exact import ExactPlanner
 from graph_sail.io import graph_from_dict
 from graph_sail.models import LinkSpec, PlanResult
 from graph_sail.planner import BeamPlanner, GreedyPlanner
@@ -34,6 +35,23 @@ def test_plan_result_summary_properties():
 def test_greedy_chooses_earliest_finish():
     plan = GreedyPlanner().plan(demo_graph())
     assert plan.placements["vision-encoder"] == "gpu-0"
+
+
+def test_exact_matches_the_demo_optimum_and_is_repeatable():
+    planner = ExactPlanner()
+    first = planner.plan(demo_graph())
+    second = planner.plan(demo_graph())
+
+    assert first.algorithm == "exact-earliest-finish"
+    assert first.to_dict() == second.to_dict()
+    assert first.makespan_ms == pytest.approx(53.135)
+
+
+def test_exact_state_budget_is_explicit():
+    with pytest.raises(ValueError, match="max_states"):
+        ExactPlanner(0)
+    with pytest.raises(PlanningError, match="state limit"):
+        ExactPlanner(1).plan(demo_graph())
 
 
 def test_beam_can_avoid_greedy_memory_dead_end():

@@ -296,7 +296,7 @@ def test_cli_validate(tmp_path, capsys):
     assert "valid: multimodal-assistant" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("algorithm", ["greedy", "beam"])
+@pytest.mark.parametrize("algorithm", ["greedy", "beam", "exact"])
 def test_cli_plan_writes_bundle(tmp_path, capsys, algorithm):
     path = tmp_path / "graph.json"
     path.write_text(json.dumps(demo_payload()), encoding="utf-8")

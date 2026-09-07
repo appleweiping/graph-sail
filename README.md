@@ -50,6 +50,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Stable topological ordering and concrete cycle diagnostics.
 - Fast deterministic greedy planner.
 - Bounded beam search that can preserve memory for later constrained components.
+- Bounded exhaustive planning for small graphs, providing a reproducible optimum
+  reference against which greedy and beam decisions can be checked.
 - Candidate-by-candidate explanations for every placement.
 - Critical-chain, utilization, transfer, and memory summaries.
 - JSON, Graphviz DOT, and responsive standalone HTML reports.
@@ -91,6 +93,10 @@ graph-sail plan examples/demo-output/graph.json --algorithm beam --beam-width 16
 ```
 
 Use `--algorithm greedy` for the fastest deterministic baseline.
+For a small graph, use `--algorithm exact` to enumerate every feasible
+placement and obtain the minimum makespan under the declared model. The exact
+planner has a hard state budget and is intended as a correctness oracle or
+regression reference, not as an unbounded production scheduler.
 
 Calibrate latency cells from measurements exported by a deployment harness, then compare the bundled
 planning baselines:
@@ -155,8 +161,11 @@ The greedy planner selects the earliest-finishing candidate immediately. The bea
 bounded set of alternatives, which lets it avoid cases where a fast early placement consumes memory
 needed by a later pinned node. Both planners keep the stable topological ready-node order fixed: beam
 search explores device placements, not alternative valid execution orders for independent nodes.
-Consequently, a plan is deterministic and feasible under the model but is not an optimized task-order
-schedule. The full cost model and complexity are documented in [architecture.md](docs/architecture.md).
+The exact planner enumerates all feasible device assignments in that same fixed
+order and selects the `_state_rank` minimum; its explicit state ceiling makes
+the cost visible. Consequently, greedy and beam plans are deterministic and
+feasible under the model but are not guaranteed global optima. The full cost
+model and complexity are documented in [architecture.md](docs/architecture.md).
 
 ## How much the plan depends on your estimates
 

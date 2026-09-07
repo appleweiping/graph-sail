@@ -10,6 +10,7 @@ from graph_sail.calibration import (
     load_observations,
 )
 from graph_sail.errors import GraphSailError, OutputError, PlanningError, ValidationError
+from graph_sail.exact import ExactPlanner
 from graph_sail.io import graph_from_dict, load_graph
 from graph_sail.models import GraphSpec, PlanResult
 from graph_sail.planner import BeamPlanner, GreedyPlanner
@@ -19,6 +20,7 @@ __all__ = [
     "BenchmarkResult",
     "CalibrationCell",
     "CalibrationResult",
+    "ExactPlanner",
     "GraphSailError",
     "GraphSpec",
     "GreedyPlanner",
@@ -36,4 +38,4 @@ __all__ = [
     "load_observations",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

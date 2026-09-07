@@ -4,6 +4,17 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- `ExactPlanner` and `graph-sail plan --algorithm exact`, a bounded exhaustive
+  placement oracle for small graphs. It enumerates every feasible assignment
+  in the stable topological order and selects the minimum makespan, with an
+  explicit state ceiling so the exponential cost cannot be accidental.
+- The exact planner is available to sensitivity analysis as well, making it
+  possible to compare estimate fragility against a globally optimal baseline.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added
