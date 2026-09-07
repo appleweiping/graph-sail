@@ -14,6 +14,8 @@ All notable changes are recorded here. This project follows semantic versioning.
 - Real local process actors with explicit trusted factories/method allowlists,
   bounded FIFO mailboxes, asynchronous result handles, process crash detection,
   serialization limits and drain/terminate/join lifecycle policies.
+- An actual process-actor capacity protocol with independent closed-form output
+  verification, raw per-trial lifecycle timings and honest local workload observations.
 
 ### Fixed
 

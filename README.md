@@ -278,8 +278,11 @@ risk matters, and retain the serialized probe list with any conclusion.
 
 ## Interpreting results responsibly
 
-Graph Sail plans from numbers you provide. It does not benchmark hardware and its output is not a
-throughput or service-level guarantee. Current schedules assume one node at a time per device,
+Graph Sail's planner uses numbers you provide; its output is not a measured
+throughput or service-level guarantee. The separate [actor capacity protocol](docs/actor-capacity.md)
+measures bounded local worker workloads and reports startup/processing/shutdown
+separately; it does not discover general hardware or deployment capacity.
+Current schedules assume one node at a time per device,
 persistent component memory, and non-contended transfers. Kernels that overlap, power limits, and
 network contention require measurement or a richer simulator.
 
@@ -299,6 +302,7 @@ score.
 python -m ruff check src tests
 python -m ruff format --check src tests
 python -m coverage run -m pytest
+python -m coverage combine
 python -m coverage report
 ```
 

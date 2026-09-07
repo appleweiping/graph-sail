@@ -118,6 +118,10 @@ concurrent status readers do not compete with the broker's process cleanup.
 does not mean the broker has finished settling pending calls. Use `close()` to
 wait for that cleanup.
 
+The [actor capacity protocol](actor-capacity.md) measures actual worker startup,
+processing and shutdown separately and checks every trial against a closed-form
+oracle. It includes local observations, not distributed performance guarantees.
+
 OS failures during terminate, kill, join, pipe close or process-handle close are
 collected while best-effort cleanup continues. Public close/terminate then raises
 `ActorDiedError`; `failure` records that cleanup error. A worker the OS refused

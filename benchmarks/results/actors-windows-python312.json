@@ -1,0 +1,51 @@
+{
+  "kind": "graph-sail-recorded-actor-capacity",
+  "schema_version": "1.0",
+  "observed_date": "2026-09-07",
+  "actor_implementation_commit": "6a0e326",
+  "protocol": "benchmarks/benchmark_actors.py",
+  "protocol_sha256": "49aa4e0c79c4d51cf5b4a0167bc156eb780ba55c372bb86e7e28ee076c7aa12e",
+  "environment": {"implementation": "CPython", "python": "3.12.13", "system": "Windows", "release": "11", "machine": "AMD64", "logical_cpus": 16},
+  "host_isolated": false,
+  "repeats": 3,
+  "warmups": 1,
+  "trial_columns": ["startup_ns", "processing_ns", "shutdown_ns", "total_ns"],
+  "cases": [
+    {
+      "requests": 128,
+      "rounds": 2048,
+      "actors": 2,
+      "window": 16,
+      "expected_output_sha256": "4e2c437c1449d56901b9c7ed5f93dc30cb376540ffd55bb1006315dcdd84e106",
+      "all_trial_digests_matched": true,
+      "direct": {
+        "observed_processes": 1,
+        "max_pending_observed": 0,
+        "trials": [[4900, 15001300, 4900, 15011100], [3600, 15812900, 2700, 15819200], [2200, 13965700, 7000, 13974900]]
+      },
+      "process": {
+        "observed_processes": 2,
+        "max_pending_observed": 16,
+        "trials": [[1248950300, 48732700, 37201100, 1334884100], [1203599100, 18358800, 37202100, 1259160000], [1229976300, 36466500, 35928000, 1302370800]]
+      }
+    },
+    {
+      "requests": 32,
+      "rounds": 100000,
+      "actors": 2,
+      "window": 16,
+      "expected_output_sha256": "7982d62c6248c903518be79eda2371831a7ab76d2c43e9889f3b5f5346f2a4cd",
+      "all_trial_digests_matched": true,
+      "direct": {
+        "observed_processes": 1,
+        "max_pending_observed": 0,
+        "trials": [[5500, 176479300, 8200, 176493000], [4500, 187361700, 8700, 187374900], [6900, 194893500, 19900, 194920300]]
+      },
+      "process": {
+        "observed_processes": 2,
+        "max_pending_observed": 16,
+        "trials": [[1340857000, 95999600, 42109700, 1478966300], [1337901100, 95288700, 47129200, 1480319000], [1714863200, 118777500, 47116700, 1880757400]]
+      }
+    }
+  ]
+}
