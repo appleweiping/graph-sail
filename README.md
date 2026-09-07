@@ -158,6 +158,58 @@ search explores device placements, not alternative valid execution orders for in
 Consequently, a plan is deterministic and feasible under the model but is not an optimized task-order
 schedule. The full cost model and complexity are documented in [architecture.md](docs/architecture.md).
 
+## How much the plan depends on your estimates
+
+Graph Sail plans from numbers you provide, and the plan arrived as a single
+placement with no indication of how much of it rested on any one of them. An
+estimate that could be wrong by a factor of two without changing anything
+deserves less worry than one that flips the placement at fifteen percent.
+
+```console
+graph-sail sensitivity graph.json --output sensitivity.json
+```
+
+```
+probed 6 estimates against 53.135 ms
+  weakest estimate: language-core on gpu-0 changes the placement at 12%
+  worth re-measuring: language-core, vision-encoder
+```
+
+Two questions are answered separately, because they have different answers.
+
+**Which estimates reach the makespan.** `response` is the fraction of an added
+millisecond that shows up in the plan: one for a node on the critical chain,
+zero for one the schedule absorbs. It is measured by perturbing the estimate
+and re-planning, not derived from finish times. The gap between a node's finish
+and the end of the plan is *not* its slack -- a node feeding the last one has
+successors waiting on it -- and on the bundled demo that mistake reports the
+language model, the single largest and most critical estimate, as having
+slack.
+
+**How far an estimate can move before the placement changes.** Placement is a
+discrete decision, so it does not drift: it holds, and then at some multiplier
+it does not. Both directions are bisected, because a node being slower and
+being faster than estimated push a placement different ways.
+
+| node | response | flips when slower | margin |
+|---|---:|---:|---:|
+| language-core | 1.00 | 1.12x | **12%** |
+| vision-encoder | 1.00 | 1.25x | 25% |
+| audio-encoder | 0.00 | 2.73x | 173% |
+| decode-audio, decode-image, format-response | 1.00 | — | stable |
+
+`worth re-measuring` is the intersection: influential *and* fragile.
+Influential alone is nearly every node on a mostly serial pipeline, and fragile
+alone includes `audio-encoder`, which needs to be almost three times slower
+than estimated before anything moves.
+
+Stability is a property of the plan **and** the algorithm that produced it, so
+the planner is passed in and named in the report rather than assumed.
+
+A search that finds no flip reports the range it covered. That is not a claim
+that the placement is unconditionally stable, and the command says so rather
+than printing an empty list.
+
 ## Interpreting results responsibly
 
 Graph Sail plans from numbers you provide. It does not benchmark hardware and its output is not a

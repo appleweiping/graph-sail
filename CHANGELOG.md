@@ -6,6 +6,25 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- `graph-sail sensitivity`: report how much a plan depends on each latency estimate. Answers two
+  questions separately -- how much of an added millisecond reaches the makespan, and how far an
+  estimate can move before the placement itself changes -- because they have different answers
+  and different costs.
+- The makespan response is measured by perturbing one estimate and re-planning, not derived from
+  finish times. The gap between a node's finish and the end of the plan is not its slack: a node
+  feeding the last one has successors waiting on it, and on the bundled demo that arithmetic
+  reports the language model, the largest and most critical estimate, as having slack.
+- Placement stability is found by bisecting in both directions to a stated tolerance over a
+  stated range. A search that finds no flip reports the range it covered, which is not a claim
+  that the placement is unconditionally stable.
+- The report's short list is the intersection of influential and fragile. Influential alone is
+  nearly every node on a mostly serial pipeline; fragile alone includes estimates that need to
+  be three times wrong before anything moves.
+- Stability is reported against the planner that produced the plan, since a beam search and a
+  greedy pass can disagree about how fragile the same graph is.
+- `graph_sail.sensitivity` as a Python API: `analyze_sensitivity`, `makespan_sensitivity`,
+  `placement_stability`, and `perturb`.
+
 - Opt-in device contention modelling: a device may declare a linear co-residency slowdown that
   rescales the caller's isolated latency estimate, changing placement when a device is loaded.
 - Opt-in request batching: a node may declare a batch size, formation window, and fixed-cost
