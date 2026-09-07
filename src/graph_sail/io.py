@@ -64,7 +64,7 @@ def load_graph(path: str | Path) -> GraphSpec:
 def graph_from_dict(payload: Any) -> GraphSpec:
     """Parse a Python object into a validated immutable graph."""
 
-    root = _mapping(payload, "$")
+    root = _mapping(payload, "$", maximum=len(_TOP_LEVEL_FIELDS) + 1)
     unknown = sorted(set(root) - _TOP_LEVEL_FIELDS)
     if unknown:
         raise ValidationError(f"$ contains unknown field(s): {', '.join(unknown)}")
@@ -108,7 +108,7 @@ def graph_from_dict(payload: Any) -> GraphSpec:
 
 
 def _parse_device(payload: Any, path: str) -> DeviceSpec:
-    item = _mapping(payload, path)
+    item = _mapping(payload, path, maximum=5)
     _reject_unknown(item, {"name", "memory_mb", "kinds", "contention"}, path)
     contention = item.get("contention")
     return DeviceSpec(
@@ -124,7 +124,7 @@ def _parse_device(payload: Any, path: str) -> DeviceSpec:
 
 
 def _parse_contention(payload: Any, path: str) -> ContentionSpec:
-    item = _mapping(payload, path)
+    item = _mapping(payload, path, maximum=3)
     _reject_unknown(item, {"slowdown_per_cotenant", "max_cotenants"}, path)
     return ContentionSpec(
         slowdown_per_cotenant=_nonnegative_number(
@@ -137,19 +137,19 @@ def _parse_contention(payload: Any, path: str) -> ContentionSpec:
 
 
 def _parse_node(payload: Any, path: str) -> NodeSpec:
-    item = _mapping(payload, path)
+    item = _mapping(payload, path, maximum=8)
     _reject_unknown(
         item,
         {"id", "kind", "memory_mb", "latency_ms", "allowed_devices", "pinned_device", "batch"},
         path,
     )
-    raw_latencies = _mapping(item.get("latency_ms"), f"{path}.latency_ms")
+    raw_latencies = _mapping(
+        item.get("latency_ms"),
+        f"{path}.latency_ms",
+        maximum=MAX_LATENCY_CELLS_PER_NODE,
+    )
     if not raw_latencies:
         raise ValidationError(f"{path}.latency_ms must contain at least one device estimate")
-    if len(raw_latencies) > MAX_LATENCY_CELLS_PER_NODE:
-        raise ValidationError(
-            f"{path}.latency_ms exceeds the {MAX_LATENCY_CELLS_PER_NODE}-entry limit"
-        )
     latency_items = [
         (
             _text(device, f"{path}.latency_ms key"),
@@ -181,7 +181,7 @@ def _parse_node(payload: Any, path: str) -> NodeSpec:
 
 
 def _parse_batch(payload: Any, path: str) -> BatchSpec:
-    item = _mapping(payload, path)
+    item = _mapping(payload, path, maximum=4)
     _reject_unknown(item, {"size", "window_ms", "fixed_fraction"}, path)
     return BatchSpec(
         size=_count(item.get("size"), f"{path}.size", minimum=1, maximum=MAX_BATCH_SIZE),
@@ -191,7 +191,7 @@ def _parse_batch(payload: Any, path: str) -> BatchSpec:
 
 
 def _parse_edge(payload: Any, path: str) -> EdgeSpec:
-    item = _mapping(payload, path)
+    item = _mapping(payload, path, maximum=5)
     _reject_unknown(item, {"source", "target", "payload_mb", "label"}, path)
     return EdgeSpec(
         source=_text(item.get("source"), f"{path}.source"),
@@ -202,7 +202,7 @@ def _parse_edge(payload: Any, path: str) -> EdgeSpec:
 
 
 def _parse_link(payload: Any, path: str) -> LinkSpec:
-    item = _mapping(payload, path)
+    item = _mapping(payload, path, maximum=5)
     _reject_unknown(item, {"source", "target", "bandwidth_mb_s", "latency_ms"}, path)
     return LinkSpec(
         source=_text(item.get("source"), f"{path}.source"),
@@ -212,20 +212,30 @@ def _parse_link(payload: Any, path: str) -> LinkSpec:
     )
 
 
-def _mapping(value: Any, path: str) -> Mapping[str, Any]:
+def _mapping(value: Any, path: str, *, maximum: int) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValidationError(f"{path} must be an object")
-    if not all(isinstance(key, str) for key in value):
-        raise ValidationError(f"{path} object keys must be strings")
-    return value
+    result: dict[str, Any] = {}
+    for entry_count, (key, item) in enumerate(value.items()):
+        if entry_count == maximum:
+            raise ValidationError(f"{path} exceeds the {maximum}-entry limit")
+        if not isinstance(key, str):
+            raise ValidationError(f"{path} object keys must be strings")
+        if key in result:
+            raise ValidationError(f"{path} contains duplicate field {key!r}")
+        result[key] = item
+    return result
 
 
-def _sequence(value: Any, path: str, *, maximum: int | None = None) -> Sequence[Any]:
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+def _sequence(value: Any, path: str, *, maximum: int) -> Sequence[Any]:
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
         raise ValidationError(f"{path} must be an array")
-    if maximum is not None and len(value) > maximum:
-        raise ValidationError(f"{path} exceeds the {maximum}-item limit")
-    return value
+    result: list[Any] = []
+    for item in value:
+        if len(result) == maximum:
+            raise ValidationError(f"{path} exceeds the {maximum}-item limit")
+        result.append(item)
+    return tuple(result)
 
 
 def _text(value: Any, path: str, *, allow_empty: bool = False) -> str:

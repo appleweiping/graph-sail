@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any
 
 from graph_sail.errors import PlanningError
+from graph_sail.limits import MAX_DEVICES, MAX_EDGES, MAX_NODES, MAX_TEXT_LENGTH
 from graph_sail.models import GraphSpec, PlanResult, ScheduledNode
 
 
@@ -18,8 +22,92 @@ class PlanMetrics:
     total_transfer_ms: float
     cross_device_edges: int
     critical_chain: tuple[str, ...]
-    device_utilization: dict[str, float]
-    memory_utilization: dict[str, float]
+    device_utilization: Mapping[str, float]
+    memory_utilization: Mapping[str, float]
+
+    def __post_init__(self) -> None:
+        for field_name in ("makespan_ms", "total_compute_ms", "total_transfer_ms"):
+            object.__setattr__(
+                self,
+                field_name,
+                _metric_number(getattr(self, field_name), field_name),
+            )
+        if (
+            isinstance(self.cross_device_edges, bool)
+            or not isinstance(self.cross_device_edges, int)
+            or not 0 <= self.cross_device_edges <= MAX_EDGES
+        ):
+            raise PlanningError(f"cross_device_edges must be an integer from 0 to {MAX_EDGES}")
+        chain = _bounded_chain(self.critical_chain)
+        devices = _bounded_utilization(self.device_utilization, "device_utilization")
+        memory = _bounded_utilization(self.memory_utilization, "memory_utilization")
+        if devices.keys() != memory.keys():
+            raise PlanningError("device and memory utilization must name the same devices")
+        object.__setattr__(self, "critical_chain", chain)
+        object.__setattr__(self, "device_utilization", MappingProxyType(devices))
+        object.__setattr__(self, "memory_utilization", MappingProxyType(memory))
+
+
+def _metric_number(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PlanningError(f"{label} must be a number")
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise PlanningError(f"{label} must be finite") from exc
+    if not math.isfinite(number) or number < 0:
+        raise PlanningError(f"{label} must be finite and zero or greater")
+    return number
+
+
+def _metric_name(value: Any, label: str) -> str:
+    if not isinstance(value, str):
+        raise PlanningError(f"{label} must be a string")
+    text = value.strip()
+    if not text:
+        raise PlanningError(f"{label} must not be empty")
+    if len(text) > MAX_TEXT_LENGTH:
+        raise PlanningError(f"{label} exceeds the {MAX_TEXT_LENGTH}-character limit")
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise PlanningError(f"{label} must contain valid Unicode scalar values") from exc
+    if any(ord(character) < 32 or ord(character) == 127 for character in text):
+        raise PlanningError(f"{label} must not contain control characters")
+    return text
+
+
+def _bounded_chain(value: Any) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Iterable):
+        raise PlanningError("critical_chain must be an iterable")
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if len(result) == MAX_NODES:
+            raise PlanningError(f"critical_chain exceeds the {MAX_NODES}-item limit")
+        node = _metric_name(item, "critical_chain entry")
+        if node in seen:
+            raise PlanningError(f"critical_chain contains duplicate node {node!r}")
+        result.append(node)
+        seen.add(node)
+    return tuple(result)
+
+
+def _bounded_utilization(value: Any, label: str) -> dict[str, float]:
+    if not isinstance(value, Mapping):
+        raise PlanningError(f"{label} must be a mapping")
+    result: dict[str, float] = {}
+    for entry_count, (raw_device, raw_usage) in enumerate(value.items()):
+        if entry_count == MAX_DEVICES:
+            raise PlanningError(f"{label} exceeds the {MAX_DEVICES}-entry limit")
+        device = _metric_name(raw_device, f"{label} key")
+        if device in result:
+            raise PlanningError(f"{label} contains duplicate device {device!r}")
+        usage = _metric_number(raw_usage, f"{label} for {device!r}")
+        if usage > 1.0 + 1e-9:
+            raise PlanningError(f"{label} for {device!r} must not exceed one")
+        result[device] = usage
+    return result
 
 
 def analyze_plan(graph: GraphSpec, plan: PlanResult) -> PlanMetrics:

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Sequence
+from typing import Any
 
 import pytest
 
+import graph_sail.io as io_module
 from graph_sail.demo import demo_payload
 from graph_sail.errors import ValidationError
 from graph_sail.io import graph_from_dict, load_graph
@@ -250,3 +253,28 @@ def test_parser_collection_and_mapping_resource_limits(monkeypatch):
     payload["nodes"][0]["latency_ms"] = {1: 2}
     with pytest.raises(ValidationError, match="keys must be strings"):
         graph_from_dict(payload)
+
+
+class _EndlessSequence(Sequence[Any]):
+    def __init__(self, item: Any) -> None:
+        self.item = item
+        self.yielded = 0
+
+    def __getitem__(self, index: int) -> Any:
+        self.yielded += 1
+        return self.item
+
+    def __len__(self) -> int:
+        # A hostile programmatic caller can lie about length.
+        return 0
+
+
+def test_programmatic_graph_arrays_are_bounded_while_materializing(monkeypatch):
+    monkeypatch.setattr(io_module, "MAX_DEVICES", 2)
+    payload = demo_payload()
+    devices = _EndlessSequence({"name": "cpu", "memory_mb": 1})
+    payload["devices"] = devices
+
+    with pytest.raises(ValidationError, match="devices exceeds the 2-item limit"):
+        graph_from_dict(payload)
+    assert devices.yielded == 3

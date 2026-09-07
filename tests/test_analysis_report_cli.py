@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+import graph_sail.analysis as analysis_module
 from graph_sail import __version__
-from graph_sail.analysis import analyze_plan, critical_chain
+from graph_sail.analysis import PlanMetrics, analyze_plan, critical_chain
 from graph_sail.cli import main
 from graph_sail.demo import demo_graph, demo_payload
 from graph_sail.errors import OutputError, PlanningError
@@ -21,6 +23,105 @@ def test_cli_reports_package_version(capsys):
         main(["--version"])
     assert error.value.code == 0
     assert capsys.readouterr().out == f"graph-sail {__version__}\n"
+
+
+def test_plan_metrics_snapshots_collections_and_replace_rechecks_invariants() -> None:
+    chain = ["node"]
+    devices = {"cpu": 0.5}
+    memory = {"cpu": 0.25}
+    metrics = PlanMetrics(10, 5, 1, 1, chain, devices, memory)  # type: ignore[arg-type]
+    chain.clear()
+    devices["cpu"] = 1
+    memory["cpu"] = 1
+    assert metrics.critical_chain == ("node",)
+    assert metrics.device_utilization["cpu"] == 0.5
+    assert metrics.memory_utilization["cpu"] == 0.25
+    with pytest.raises(TypeError):
+        metrics.device_utilization["cpu"] = 0  # type: ignore[index]
+
+    for changes in (
+        {"makespan_ms": float("nan")},
+        {"cross_device_edges": True},
+        {"critical_chain": ("node", "node")},
+        {"device_utilization": []},
+        {"device_utilization": {"cpu": 1.1}},
+        {"memory_utilization": {"gpu": 0.25}},
+    ):
+        with pytest.raises(PlanningError):
+            replace(metrics, **changes)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"makespan_ms": True},
+        {"makespan_ms": 10**10_000},
+        {"cross_device_edges": -1},
+        {"critical_chain": "node"},
+        {"critical_chain": (1,)},
+        {"critical_chain": (" ",)},
+        {"critical_chain": ("x" * (analysis_module.MAX_TEXT_LENGTH + 1),)},
+        {"critical_chain": ("\ud800",)},
+        {"critical_chain": ("bad\nnode",)},
+        {
+            "device_utilization": {"cpu": 0.5, " cpu ": 0.4},
+            "memory_utilization": {"cpu": 0.25},
+        },
+        {"device_utilization": {"cpu": True}},
+    ],
+)
+def test_plan_metrics_rejects_invalid_public_values(changes) -> None:
+    arguments = {
+        "makespan_ms": 10,
+        "total_compute_ms": 5,
+        "total_transfer_ms": 1,
+        "cross_device_edges": 1,
+        "critical_chain": ("node",),
+        "device_utilization": {"cpu": 0.5},
+        "memory_utilization": {"cpu": 0.25},
+    }
+    arguments.update(changes)
+    with pytest.raises(PlanningError):
+        PlanMetrics(**arguments)
+
+
+class _EndlessMetricMapping(Mapping[str, float]):
+    def __init__(self) -> None:
+        self.yielded = 0
+
+    def __getitem__(self, key: str) -> float:
+        return 0.0
+
+    def __iter__(self) -> Iterator[str]:
+        index = 0
+        while True:
+            self.yielded += 1
+            yield f"device-{index}"
+            index += 1
+
+    def __len__(self) -> int:
+        return 0
+
+
+def test_plan_metrics_bounds_programmatic_collections_while_iterating(monkeypatch) -> None:
+    monkeypatch.setattr(analysis_module, "MAX_DEVICES", 2)
+    devices = _EndlessMetricMapping()
+    with pytest.raises(PlanningError, match="exceeds the 2-entry limit"):
+        PlanMetrics(0, 0, 0, 0, (), devices, {})
+    assert devices.yielded == 3
+
+    monkeypatch.setattr(analysis_module, "MAX_NODES", 2)
+    yielded = 0
+
+    def endless_chain():
+        nonlocal yielded
+        while True:
+            yielded += 1
+            yield f"node-{yielded}"
+
+    with pytest.raises(PlanningError, match="exceeds the 2-item limit"):
+        PlanMetrics(0, 0, 0, 0, endless_chain(), {}, {})  # type: ignore[arg-type]
+    assert yielded == 3
 
 
 @pytest.fixture
@@ -143,7 +244,10 @@ def test_critical_chain_of_empty_plan_is_empty():
 
 def test_plan_json_serializer_forbids_nonstandard_nan(tmp_path, demo_plan, monkeypatch):
     graph, plan = demo_plan
-    invalid_metrics = replace(analyze_plan(graph, plan), total_transfer_ms=float("nan"))
+    invalid_metrics = analyze_plan(graph, plan)
+    with pytest.raises(PlanningError, match=r"total_transfer_ms must be finite"):
+        replace(invalid_metrics, total_transfer_ms=float("nan"))
+    object.__setattr__(invalid_metrics, "total_transfer_ms", float("nan"))
     monkeypatch.setattr("graph_sail.report.analyze_plan", lambda graph, plan: invalid_metrics)
     with pytest.raises(OutputError, match=r"Out of range float"):
         write_report_bundle(graph, plan, tmp_path)

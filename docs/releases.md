@@ -4,16 +4,18 @@ Versioned Graph Sail source distributions and wheels are published on the reposi
 [GitHub Releases](https://github.com/appleweiping/graph-sail/releases) page. The project is not
 claiming a package index release unless that index is linked from this repository.
 
-The release workflow runs only for a `vX.Y.Z` tag and refuses to publish when the tag,
-`pyproject.toml`, and the package's exported version disagree. It reruns lint, formatting, and
-tests; builds a source distribution and wheel; checks package metadata; installs the wheel in a
-fresh environment; and publishes a `SHA256SUMS` file.
+The release workflow runs only for a `vX.Y.Z` tag on `main` whose cross-platform `CI gate` and
+CodeQL analysis already succeeded. It refuses to publish when the tag, `pyproject.toml`, and the package's exported version
+disagree. A pinned `uv` binary synchronizes the frozen `uv.lock`, including the exact build backend
+and its transitive dependencies. The workflow reruns lint, formatting, and tests, builds a source
+distribution and wheel without a second dependency resolution, checks package metadata, installs
+the wheel in a fresh environment, and publishes `SHA256SUMS`.
 
 Download and verify one release with:
 
 ```bash
-gh release download v0.2.0 --repo appleweiping/graph-sail --dir graph-sail-v0.2.0
-cd graph-sail-v0.2.0
+gh release download v0.3.0 --repo appleweiping/graph-sail --dir graph-sail-v0.3.0
+cd graph-sail-v0.3.0
 sha256sum --check SHA256SUMS
 gh attestation verify ./*.whl --repo appleweiping/graph-sail
 gh attestation verify ./*.tar.gz --repo appleweiping/graph-sail

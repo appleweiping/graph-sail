@@ -19,6 +19,7 @@ from graph_sail.report import write_report_bundle
 from graph_sail.sensitivity import (
     DEFAULT_MAX_FACTOR,
     DEFAULT_MIN_FACTOR,
+    DEFAULT_SAMPLES_PER_OCTAVE,
     DEFAULT_TOLERANCE,
     analyze_sensitivity,
 )
@@ -71,19 +72,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-factor",
         type=float,
         default=DEFAULT_MAX_FACTOR,
-        help="largest multiplier searched when an estimate is made worse",
+        help="largest multiplier sampled when an estimate is made worse",
     )
     sensitivity.add_argument(
         "--min-factor",
         type=float,
         default=DEFAULT_MIN_FACTOR,
-        help="smallest multiplier searched when an estimate is made better",
+        help="smallest multiplier sampled when an estimate is made better",
     )
     sensitivity.add_argument(
         "--tolerance",
         type=float,
         default=DEFAULT_TOLERANCE,
-        help="relative width at which the flip-point search stops",
+        help="relative width at which an observed flip bracket stops refining",
+    )
+    sensitivity.add_argument(
+        "--samples-per-octave",
+        type=int,
+        default=DEFAULT_SAMPLES_PER_OCTAVE,
+        help="geometric placement probes per factor-of-two interval",
     )
 
     demo = subparsers.add_parser("demo", help="run the built-in multimodal graph")
@@ -151,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_factor=args.max_factor,
                 min_factor=args.min_factor,
                 tolerance=args.tolerance,
+                samples_per_octave=args.samples_per_octave,
             )
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(
@@ -165,13 +173,13 @@ def main(argv: list[str] | None = None) -> int:
             weakest = report.weakest
             if weakest is not None and weakest.margin is not None:
                 print(
-                    f"  weakest estimate: {weakest.node} on {weakest.device} changes the "
-                    f"placement at {weakest.margin:.0%}"
+                    f"  weakest observed change: {weakest.node} on {weakest.device} near "
+                    f"{weakest.margin:.0%}"
                 )
             else:
                 print(
-                    "  no estimate changed the placement inside the searched range, "
-                    "which is not the same as none being able to"
+                    "  no estimate changed the placement at the recorded probe factors; "
+                    "changes between probes or outside the range remain possible"
                 )
             if report.load_bearing:
                 print(f"  worth re-measuring: {', '.join(report.load_bearing)}")

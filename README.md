@@ -162,8 +162,9 @@ schedule. The full cost model and complexity are documented in [architecture.md]
 
 Graph Sail plans from numbers you provide, and the plan arrived as a single
 placement with no indication of how much of it rested on any one of them. An
-estimate that could be wrong by a factor of two without changing anything
-deserves less worry than one that flips the placement at fifteen percent.
+estimate whose factor-of-two probe keeps the placement deserves less worry
+than one whose nearby probes change it, while neither observation proves what
+happens at factors that were not probed.
 
 ```console
 graph-sail sensitivity graph.json --output sensitivity.json
@@ -171,7 +172,7 @@ graph-sail sensitivity graph.json --output sensitivity.json
 
 ```
 probed 6 estimates against 53.135 ms
-  weakest estimate: language-core on gpu-0 changes the placement at 12%
+  weakest observed change: language-core on gpu-0 near 12%
   worth re-measuring: language-core, vision-encoder
 ```
 
@@ -186,29 +187,45 @@ successors waiting on it -- and on the bundled demo that mistake reports the
 language model, the single largest and most critical estimate, as having
 slack.
 
-**How far an estimate can move before the placement changes.** Placement is a
-discrete decision, so it does not drift: it holds, and then at some multiplier
-it does not. Both directions are bisected, because a node being slower and
-being faster than estimated push a placement different ways.
+**At which sampled factors an estimate changes the placement.** A planner's
+discrete decisions are not assumed to be monotonic: a placement can change and
+later return. Both directions are therefore checked on a geometric grid. The
+default one-sample-per-octave grid includes `0.5x` and `2x`; the configured
+endpoints are always included. After the first sampled change in either
+direction, Graph Sail bisects only the bracket from the preceding unchanged
+sample to refine that observed boundary. `--samples-per-octave` makes the grid
+denser, subject to explicit per-direction and total-work ceilings.
 
-| node | response | flips when slower | margin |
+| node | response | first observed slower flip | observed margin |
 |---|---:|---:|---:|
 | language-core | 1.00 | 1.12x | **12%** |
-| vision-encoder | 1.00 | 1.25x | 25% |
+| vision-encoder | 1.00 | 1.24x | 24% |
 | audio-encoder | 0.00 | 2.73x | 173% |
-| decode-audio, decode-image, format-response | 1.00 | — | stable |
+| decode-audio, decode-image, format-response | 1.00 | — | no sampled flip |
 
-`worth re-measuring` is the intersection: influential *and* fragile.
-Influential alone is nearly every node on a mostly serial pipeline, and fragile
-alone includes `audio-encoder`, which needs to be almost three times slower
-than estimated before anything moves.
+`worth re-measuring` is the descriptive intersection: influential *and* an
+observed placement change. It is not an application-specific risk threshold.
+Influential alone is nearly every node on a mostly serial pipeline, and the
+observed fragile set includes `audio-encoder`, whose first sampled-and-refined
+placement change is near three times its estimate.
 
 Stability is a property of the plan **and** the algorithm that produced it, so
-the planner is passed in and named in the report rather than assumed.
+the planner is passed in rather than assumed. Before perturbation it must
+reproduce the supplied placement and sensitivity-relevant schedule/timing on
+the unmodified graph; the report records the algorithm label emitted by that
+reproduction. This baseline call, the makespan probes, the geometric probes,
+and worst-case bisection work all share one conservative planner-call ceiling.
 
-A search that finds no flip reports the range it covered. That is not a claim
-that the placement is unconditionally stable, and the command says so rather
-than printing an empty list.
+The Python result models snapshot their record collections and recheck finite values, configured
+ranges, probe density and factors, cell identity, estimate equality, and report baselines on
+construction and replacement. Every stability record serializes all factors actually probed.
+This makes a hand-built report fail explicitly instead of serializing contradictory evidence.
+
+`stable` means only that no placement change was observed at those recorded
+probe factors. It is not a claim about the continuous interval: a narrow
+non-monotonic change between probes can be missed, and factors outside the
+configured range were not tested. Increase `--samples-per-octave` when that
+risk matters, and retain the serialized probe list with any conclusion.
 
 ## Interpreting results responsibly
 

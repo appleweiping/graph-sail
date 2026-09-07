@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools==84.0.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
 
 [project]
 name = "graph-sail"
-version = "0.2.0"
+version = "0.3.0"
 description = "Deterministic placement and scheduling for heterogeneous multimodal DAGs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,19 +30,42 @@ Repository = "https://github.com/appleweiping/graph-sail"
 Issues = "https://github.com/appleweiping/graph-sail/issues"
 
 [project.optional-dependencies]
-dev = ["bandit>=1.7", "build>=1.2", "coverage[toml]>=7.6", "mypy>=1.15", "pytest>=8", "ruff>=0.8", "twine>=7.0"]
+dev = [
+  "bandit>=1.7",
+  "build>=1.2",
+  "check-wheel-contents>=0.6",
+  "coverage[toml]>=7.6",
+  "hatchling==1.32.0",
+  "mypy>=1.15",
+  "pytest>=8",
+  "ruff>=0.8",
+  "twine>=7.0",
+]
 
 [project.scripts]
 graph-sail = "graph_sail.cli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[tool.hatch.build.targets.wheel]
+packages = ["src/graph_sail"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-graph_sail = ["py.typed"]
+[tool.hatch.build.targets.sdist]
+include = [
+  "/CITATION.cff",
+  "/CHANGELOG.md",
+  "/CODE_OF_CONDUCT.md",
+  "/CONTRIBUTING.md",
+  "/GOVERNANCE.md",
+  "/LICENSE",
+  "/README.md",
+  "/SECURITY.md",
+  "/benchmarks",
+  "/docs",
+  "/examples",
+  "/pyproject.toml",
+  "/src",
+  "/tests",
+  "/uv.lock",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ from graph_sail.cli import main
 from graph_sail.demo import demo_graph, demo_payload
 from graph_sail.errors import OutputError, ValidationError
 from graph_sail.io import graph_from_dict
+from graph_sail.limits import MAX_OBSERVATIONS
 from graph_sail.planner import GreedyPlanner
 
 
@@ -414,3 +416,84 @@ def test_public_calibration_records_reject_inconsistent_shapes(tmp_path):
     for factory in result_factories:
         with pytest.raises(ValueError):
             factory()
+
+
+def test_calibration_result_binds_auditable_cells_to_the_calibrated_graph():
+    result = calibrate_graph(
+        demo_graph(),
+        (
+            LatencyObservation("decode-image", "cpu", 3.5, "run-1"),
+            LatencyObservation("decode-image", "cpu", 4.5, "run-2"),
+            LatencyObservation("decode-image", "cpu", 5.5, "run-3"),
+        ),
+    )
+
+    forged_median = replace(result.cells[0], median_ms=4.25)
+    with pytest.raises(ValueError, match="median is inconsistent"):
+        replace(result, cells=(forged_median,))
+
+    unknown = CalibrationCell("ghost", "cpu", 1, 4.5, 4.5, 4.5, ("run-1",))
+    with pytest.raises(ValueError, match="absent from the graph"):
+        replace(result, cells=(unknown,))
+
+    with pytest.raises(ValueError, match="cannot be ignored"):
+        replace(result, ignored_cells=(("decode-image", "cpu"),))
+
+
+def test_calibration_provenance_ids_are_bounded_by_and_unique_within_samples():
+    with pytest.raises(ValueError, match="run_ids"):
+        CalibrationCell("decode-image", "cpu", 1, 4.5, 4.5, 4.5, ("r1", "r2"))
+    with pytest.raises(ValueError, match="unique"):
+        CalibrationCell("decode-image", "cpu", 2, 4.5, 4.5, 4.5, ("r1", "r1"))
+
+    observations = (
+        LatencyObservation("decode-image", "cpu", 4.0, "same-run"),
+        LatencyObservation("decode-image", "cpu", 5.0, "same-run"),
+    )
+    with pytest.raises(ValidationError, match="duplicate run_id"):
+        calibrate_graph(demo_graph(), observations)
+
+
+def test_calibration_sample_domain_remains_independent_of_run_id_resource_limit(
+    monkeypatch,
+) -> None:
+    cell = CalibrationCell(
+        "decode-image",
+        "cpu",
+        MAX_OBSERVATIONS + 1,
+        4.5,
+        4.5,
+        4.5,
+    )
+    assert cell.samples == MAX_OBSERVATIONS + 1
+
+    monkeypatch.setattr(calibration_module, "MAX_OBSERVATIONS", 2)
+    yielded = 0
+
+    def endless_run_ids():
+        nonlocal yielded
+        while True:
+            yielded += 1
+            yield f"run-{yielded}"
+
+    with pytest.raises(ValueError, match="exceeds the 2-record limit"):
+        replace(cell, samples=3, run_ids=endless_run_ids())
+    assert yielded == 3
+
+
+def test_nested_ignored_cell_iterables_are_bounded_before_snapshotting():
+    result = calibrate_graph(
+        demo_graph(),
+        (LatencyObservation("decode-image", "cpu", 4.5, "run-1"),),
+    )
+    yielded = 0
+
+    def endless_pair():
+        nonlocal yielded
+        while True:
+            yielded += 1
+            yield f"value-{yielded}"
+
+    with pytest.raises(ValueError, match="node/device pairs"):
+        replace(result, ignored_cells=(endless_pair(),))
+    assert yielded == 3

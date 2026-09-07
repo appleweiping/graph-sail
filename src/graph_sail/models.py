@@ -226,18 +226,18 @@ class NodeSpec:
         object.__setattr__(self, "memory_mb", _number(self.memory_mb, "node memory_mb"))
         if not isinstance(self.latency_ms, Mapping):
             raise ValidationError("node latency_ms must be a mapping")
-        if not self.latency_ms:
-            raise ValidationError("node latency_ms must contain at least one device estimate")
-        if len(self.latency_ms) > MAX_LATENCY_CELLS_PER_NODE:
-            raise ValidationError(
-                f"node latency_ms exceeds the {MAX_LATENCY_CELLS_PER_NODE}-entry limit"
-            )
         latencies: dict[str, float] = {}
-        for raw_device, raw_latency in self.latency_ms.items():
+        for entry_count, (raw_device, raw_latency) in enumerate(self.latency_ms.items()):
+            if entry_count == MAX_LATENCY_CELLS_PER_NODE:
+                raise ValidationError(
+                    f"node latency_ms exceeds the {MAX_LATENCY_CELLS_PER_NODE}-entry limit"
+                )
             device = _text(raw_device, "node latency_ms key")
             if device in latencies:
                 raise ValidationError(f"duplicate node latency_ms device {device!r}")
             latencies[device] = _number(raw_latency, f"latency for {device!r}", positive=True)
+        if not latencies:
+            raise ValidationError("node latency_ms must contain at least one device estimate")
         object.__setattr__(self, "latency_ms", MappingProxyType(latencies))
         object.__setattr__(
             self,
@@ -542,9 +542,10 @@ class PlacementDecision:
             "selected_device",
             _text(self.selected_device, "decision selected_device", output=True),
         )
-        candidates = _bounded_tuple(
+        raw_candidates = _bounded_tuple(
             self.candidates, "decision candidates", CandidateTrace, MAX_DEVICES, output=True
         )
+        candidates = tuple(_snapshot_candidate(candidate) for candidate in raw_candidates)
         if not candidates:
             raise PlanningError("decision candidates must not be empty")
         _unique_output((candidate.device for candidate in candidates), "candidate device")
@@ -612,16 +613,20 @@ class PlanResult:
     def __post_init__(self) -> None:
         object.__setattr__(self, "graph_name", _text(self.graph_name, "graph_name", output=True))
         object.__setattr__(self, "algorithm", _text(self.algorithm, "algorithm", output=True))
-        schedule = _bounded_tuple(self.schedule, "schedule", ScheduledNode, MAX_NODES, output=True)
-        decisions = _bounded_tuple(
+        raw_schedule = _bounded_tuple(
+            self.schedule, "schedule", ScheduledNode, MAX_NODES, output=True
+        )
+        raw_decisions = _bounded_tuple(
             self.decisions, "decisions", PlacementDecision, MAX_NODES, output=True
         )
+        schedule = tuple(_snapshot_scheduled_node(item) for item in raw_schedule)
+        decisions = tuple(_snapshot_decision(item) for item in raw_decisions)
         if not isinstance(self.memory_used_mb, Mapping):
             raise PlanningError("memory_used_mb must be a mapping")
-        if len(self.memory_used_mb) > MAX_DEVICES:
-            raise PlanningError(f"memory_used_mb exceeds the {MAX_DEVICES}-entry limit")
         memory: dict[str, float] = {}
-        for raw_device, raw_value in self.memory_used_mb.items():
+        for entry_count, (raw_device, raw_value) in enumerate(self.memory_used_mb.items()):
+            if entry_count == MAX_DEVICES:
+                raise PlanningError(f"memory_used_mb exceeds the {MAX_DEVICES}-entry limit")
             device = _text(raw_device, "memory_used_mb key", output=True)
             if device in memory:
                 raise PlanningError(f"duplicate memory_used_mb key {device!r}")
@@ -638,6 +643,23 @@ class PlanResult:
                 raise PlanningError(
                     f"decision for node {item.node!r} does not match its scheduled device"
                 )
+            selected = next(
+                candidate
+                for candidate in decision.candidates
+                if candidate.device == decision.selected_device
+            )
+            for label, trace_value, schedule_value in (
+                ("start_ms", selected.start_ms, item.start_ms),
+                ("finish_ms", selected.finish_ms, item.finish_ms),
+                ("transfer_ms", selected.transfer_ms, item.incoming_transfer_ms),
+            ):
+                if trace_value is None or not math.isclose(
+                    trace_value, schedule_value, rel_tol=1e-12, abs_tol=1e-9
+                ):
+                    raise PlanningError(
+                        f"selected candidate {label} for node {item.node!r} "
+                        "is inconsistent with its schedule"
+                    )
         computed: dict[str, float] = defaultdict(float)
         for item in schedule:
             computed[item.device] += item.memory_mb
@@ -673,13 +695,22 @@ class PlanResult:
     def to_dict(self) -> dict[str, Any]:
         """Return a detached, stable JSON-serializable representation."""
 
+        snapshot = PlanResult(
+            graph_name=self.graph_name,
+            algorithm=self.algorithm,
+            schedule=self.schedule,
+            memory_used_mb=self.memory_used_mb,
+            decisions=self.decisions,
+        )
         return {
-            "graph_name": self.graph_name,
-            "algorithm": self.algorithm,
-            "makespan_ms": round(self.makespan_ms, 6),
-            "critical_node": self.critical_node,
-            "placements": self.placements,
-            "memory_used_mb": {key: round(value, 6) for key, value in self.memory_used_mb.items()},
+            "graph_name": snapshot.graph_name,
+            "algorithm": snapshot.algorithm,
+            "makespan_ms": round(snapshot.makespan_ms, 6),
+            "critical_node": snapshot.critical_node,
+            "placements": snapshot.placements,
+            "memory_used_mb": {
+                key: round(value, 6) for key, value in snapshot.memory_used_mb.items()
+            },
             "schedule": [
                 {
                     "node": item.node,
@@ -696,7 +727,7 @@ class PlanResult:
                         else {}
                     ),
                 }
-                for item in self.schedule
+                for item in snapshot.schedule
             ],
             "decisions": [
                 {
@@ -714,7 +745,7 @@ class PlanResult:
                         for candidate in decision.candidates
                     ],
                 }
-                for decision in self.decisions
+                for decision in snapshot.decisions
             ],
         }
 
@@ -733,3 +764,42 @@ def _unique_output(values: Iterable[Any], label: str) -> None:
         if value in seen:
             raise PlanningError(f"duplicate {label}: {value!r}")
         seen.add(value)
+
+
+def _snapshot_candidate(value: CandidateTrace) -> CandidateTrace:
+    """Revalidate and detach a candidate record at a public model boundary."""
+
+    return CandidateTrace(
+        device=value.device,
+        feasible=value.feasible,
+        reason=value.reason,
+        start_ms=value.start_ms,
+        finish_ms=value.finish_ms,
+        transfer_ms=value.transfer_ms,
+    )
+
+
+def _snapshot_decision(value: PlacementDecision) -> PlacementDecision:
+    """Revalidate and detach a decision, including its nested trace."""
+
+    return PlacementDecision(
+        node=value.node,
+        selected_device=value.selected_device,
+        candidates=value.candidates,
+    )
+
+
+def _snapshot_scheduled_node(value: ScheduledNode) -> ScheduledNode:
+    """Revalidate and detach a scheduled node at a public model boundary."""
+
+    return ScheduledNode(
+        node=value.node,
+        device=value.device,
+        start_ms=value.start_ms,
+        finish_ms=value.finish_ms,
+        compute_ms=value.compute_ms,
+        incoming_transfer_ms=value.incoming_transfer_ms,
+        memory_mb=value.memory_mb,
+        latency_scale=value.latency_scale,
+        batch_window_ms=value.batch_window_ms,
+    )

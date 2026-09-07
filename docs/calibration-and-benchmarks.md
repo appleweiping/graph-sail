@@ -20,12 +20,19 @@ harness, or telemetry query can export measurements without becoming a Graph Sai
 ```
 
 `node`, `device`, and a finite positive `latency_ms` are required. `run_id` is optional provenance and
-the sorted unique run IDs used by each aggregate are retained in `calibration.json`.
+the sorted unique run IDs used by each aggregate are retained in `calibration.json`. A non-empty
+`run_id` may occur only once for a node/device cell; repeated identifiers are rejected rather than
+silently collapsed, and an aggregate can never claim more run IDs than samples.
 Unknown fields, duplicate JSON keys, non-finite values, and unknown graph cells are rejected. The
 calibrator uses the sample median for each node/device cell and writes:
 
 - `graph.json`: a complete, validated graph that can be passed directly to `plan`;
 - `calibration.json`: sample count, median, minimum, and maximum for each replaced cell.
+
+The two files form one bundle: every applied report cell must exist in `graph.json`, and its reported
+median must equal the latency stored there. Conversely, `ignored` may contain only cells that are not
+present in the graph. The public result model rechecks those relations on construction, replacement,
+and serialization so a hand-built or modified report cannot contradict its calibrated graph.
 
 The command never infers memory or network transfer from component latency. Those quantities require
 separate instrumentation and remain unchanged. Declared device `contention` and node `batch`

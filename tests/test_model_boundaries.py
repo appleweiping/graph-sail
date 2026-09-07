@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import itertools
+from collections.abc import Iterator, Mapping
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
+import graph_sail.models as models_module
 from graph_sail.demo import demo_graph
 from graph_sail.errors import PlanningError, ValidationError
 from graph_sail.io import load_graph
@@ -207,3 +210,119 @@ def test_empty_plan_memory_is_defensively_immutable() -> None:
     plan = PlanResult("empty", "test", (), memory, ())
     memory["late"] = 1
     assert dict(plan.memory_used_mb) == {}
+
+
+@pytest.mark.parametrize("field", ["start_ms", "finish_ms", "transfer_ms"])
+def test_plan_result_rejects_trace_times_that_do_not_describe_the_schedule(field: str) -> None:
+    plan = GreedyPlanner().plan(demo_graph())
+    decision = plan.decisions[0]
+    selected = next(
+        candidate
+        for candidate in decision.candidates
+        if candidate.device == decision.selected_device
+    )
+    original = getattr(selected, field)
+    assert original is not None
+    forged = replace(selected, **{field: original + 1e-4})
+    candidates = tuple(
+        forged if candidate.device == selected.device else candidate
+        for candidate in decision.candidates
+    )
+    decisions = (
+        replace(decision, candidates=candidates),
+        *plan.decisions[1:],
+    )
+
+    with pytest.raises(PlanningError, match=rf"{field}.*inconsistent"):
+        replace(plan, decisions=decisions)
+
+
+def test_output_models_snapshot_nested_collections_and_replace_revalidates_them() -> None:
+    candidate_source = [CandidateTrace("cpu", True, "ok", 0, 1, 0)]
+    decision = PlacementDecision("n", "cpu", candidate_source)  # type: ignore[arg-type]
+    candidate_source.clear()
+    assert len(decision.candidates) == 1
+
+    source_plan = GreedyPlanner().plan(demo_graph())
+    schedule_source = list(source_plan.schedule)
+    decision_source = list(source_plan.decisions)
+    copied = PlanResult(
+        source_plan.graph_name,
+        source_plan.algorithm,
+        schedule_source,  # type: ignore[arg-type]
+        source_plan.memory_used_mb,
+        decision_source,  # type: ignore[arg-type]
+    )
+    original_start = copied.schedule[0].start_ms
+    object.__setattr__(schedule_source[0], "start_ms", original_start + 1)
+    schedule_source.clear()
+    decision_source.clear()
+    assert copied.schedule[0].start_ms == original_start
+
+    plan = GreedyPlanner().plan(demo_graph())
+    selected = next(
+        candidate
+        for candidate in plan.decisions[0].candidates
+        if candidate.device == plan.decisions[0].selected_device
+    )
+    assert selected.start_ms is not None
+    object.__setattr__(selected, "start_ms", selected.start_ms + 1e-4)
+    with pytest.raises(PlanningError, match=r"start_ms.*inconsistent"):
+        replace(plan)
+
+
+def test_plan_serialization_revalidates_forced_nested_mutation() -> None:
+    plan = GreedyPlanner().plan(demo_graph())
+    selected = next(
+        candidate
+        for candidate in plan.decisions[0].candidates
+        if candidate.device == plan.decisions[0].selected_device
+    )
+    assert selected.start_ms is not None
+    object.__setattr__(selected, "start_ms", selected.start_ms + 1e-4)
+
+    with pytest.raises(PlanningError, match=r"start_ms.*inconsistent"):
+        plan.to_dict()
+
+
+def test_plan_serialization_rejects_forced_unbounded_collections(monkeypatch) -> None:
+    plan = PlanResult("empty", "test", (), {}, ())
+    scheduled = ScheduledNode("n", "cpu", 0, 1, 1, 0, 1)
+    monkeypatch.setattr(models_module, "MAX_NODES", 2)
+    object.__setattr__(plan, "schedule", itertools.repeat(scheduled))
+
+    with pytest.raises(PlanningError, match="schedule exceeds"):
+        plan.to_dict()
+
+
+class _EndlessMapping(Mapping[str, float]):
+    def __init__(self) -> None:
+        self.yielded = 0
+
+    def __getitem__(self, key: str) -> float:
+        return 1.0
+
+    def __iter__(self) -> Iterator[str]:
+        index = 0
+        while True:
+            self.yielded += 1
+            yield f"device-{index}"
+            index += 1
+
+    def __len__(self) -> int:
+        # Deliberately dishonest: public boundaries must count while iterating.
+        return 0
+
+
+def test_public_mapping_inputs_are_bounded_during_snapshot(monkeypatch) -> None:
+    monkeypatch.setattr(models_module, "MAX_LATENCY_CELLS_PER_NODE", 2)
+    latencies = _EndlessMapping()
+    with pytest.raises(ValidationError, match="latency_ms exceeds the 2-entry limit"):
+        NodeSpec("n", "k", 0, latencies)
+    assert latencies.yielded == 3
+
+    monkeypatch.setattr(models_module, "MAX_DEVICES", 2)
+    memory = _EndlessMapping()
+    with pytest.raises(PlanningError, match="memory_used_mb exceeds the 2-entry limit"):
+        PlanResult("empty", "test", (), memory, ())
+    assert memory.yielded == 3

@@ -21,6 +21,7 @@ from graph_sail.limits import MAX_INPUT_BYTES, MAX_OBSERVATIONS, MAX_TEXT_LENGTH
 from graph_sail.models import GraphSpec, NodeSpec
 
 _FIELDS = {"node", "device", "latency_ms", "run_id"}
+_MAX_CELL_SAMPLES = 10_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,12 +55,19 @@ class CalibrationCell:
     run_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        samples = _sample_count(self.samples)
         if isinstance(self.run_ids, (str, bytes, bytearray)):
             raise ValueError("cell.run_ids must be an iterable of strings")
         try:
-            run_ids = _bounded_tuple(self.run_ids, MAX_OBSERVATIONS, "cell.run_ids")
+            # A run identifier is optional, but there cannot be more identifiers
+            # than observations in the aggregate. Bound iteration by both the
+            # aggregate and the public collection limit before materializing it.
+            run_ids = _bounded_tuple(self.run_ids, min(samples, MAX_OBSERVATIONS), "cell.run_ids")
         except TypeError as exc:
             raise ValueError("cell.run_ids must be an iterable") from exc
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        object.__setattr__(self, "samples", samples)
         object.__setattr__(self, "run_ids", run_ids)
         _validate_cell(self)
 
@@ -95,7 +103,7 @@ class CalibrationResult:
             if isinstance(item, (str, bytes, bytearray)):
                 raise ValueError("ignored_cells must contain node/device pairs")
             try:
-                pair = tuple(item)
+                pair = _bounded_pair(item, "ignored_cells")
             except TypeError as exc:
                 raise ValueError("ignored_cells must contain node/device pairs") from exc
             ignored.append(pair)
@@ -183,6 +191,11 @@ def calibrate_graph(
             continue
         groups[key].append(observation.latency_ms)
         if observation.run_id:
+            if observation.run_id in run_ids[key]:
+                raise ValidationError(
+                    f"duplicate run_id {observation.run_id!r} for latency cell "
+                    f"{observation.node!r}/{observation.device!r}"
+                )
             run_ids[key].add(observation.run_id)
     if not groups:
         raise ValidationError("no observations matched graph latency cells")
@@ -220,6 +233,9 @@ def calibrate_graph(
 def graph_to_dict(graph: GraphSpec) -> dict[str, Any]:
     """Return the canonical public graph-document representation."""
 
+    if not isinstance(graph, GraphSpec):
+        raise ValidationError("graph must be a GraphSpec")
+    graph.validate()
     payload = {
         "name": graph.name,
         "devices": [
@@ -386,12 +402,7 @@ def _validate_cell(value: CalibrationCell) -> None:
         raise ValueError("cells must contain CalibrationCell records")
     _text(value.node, "cell.node")
     _text(value.device, "cell.device")
-    if (
-        isinstance(value.samples, bool)
-        or not isinstance(value.samples, int)
-        or not 1 <= value.samples <= 10_000_000
-    ):
-        raise ValueError("cell.samples must be an integer from 1 to 10000000")
+    _sample_count(value.samples)
     for label, number in (
         ("median_ms", value.median_ms),
         ("minimum_ms", value.minimum_ms),
@@ -411,6 +422,8 @@ def _validate_cell(value: CalibrationCell) -> None:
         set(value.run_ids)
     ):
         raise ValueError("cell.run_ids must be unique and sorted")
+    if len(value.run_ids) > value.samples:
+        raise ValueError("cell.run_ids cannot outnumber cell.samples")
 
 
 def _validate_result(value: CalibrationResult) -> None:
@@ -426,17 +439,40 @@ def _validate_result(value: CalibrationResult) -> None:
     keys = [(cell.node, cell.device) for cell in value.cells]
     if keys != sorted(keys) or len(keys) != len(set(keys)):
         raise ValueError("calibration cells must be unique and sorted")
+    nodes = value.graph.node_map
+    for cell in value.cells:
+        key = (cell.node, cell.device)
+        graph_node = nodes.get(cell.node)
+        if graph_node is None or cell.device not in graph_node.latency_ms:
+            raise ValueError(
+                f"calibration cell {cell.node!r}/{cell.device!r} is absent from the graph"
+            )
+        if graph_node.latency_ms[cell.device] != cell.median_ms:
+            raise ValueError(
+                f"calibration cell {cell.node!r}/{cell.device!r} median is inconsistent "
+                "with the calibrated graph"
+            )
     if not isinstance(value.ignored_cells, tuple):
         raise ValueError("ignored_cells must be a tuple")
     ignored: list[tuple[str, str]] = []
     for item in value.ignored_cells:
         if not isinstance(item, tuple) or len(item) != 2:
             raise ValueError("ignored_cells must contain node/device pairs")
-        node = _text(item[0], "ignored node")
+        ignored_node = _text(item[0], "ignored node")
         device = _text(item[1], "ignored device")
-        ignored.append((node, device))
+        ignored.append((ignored_node, device))
     if ignored != sorted(ignored) or len(ignored) != len(set(ignored)):
         raise ValueError("ignored_cells must be unique and sorted")
+    for key in ignored:
+        graph_node = nodes.get(key[0])
+        if graph_node is not None and key[1] in graph_node.latency_ms:
+            raise ValueError(f"known graph latency cell {key[0]!r}/{key[1]!r} cannot be ignored")
+
+
+def _sample_count(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= _MAX_CELL_SAMPLES:
+        raise ValueError(f"cell.samples must be an integer from 1 to {_MAX_CELL_SAMPLES}")
+    return value
 
 
 def _atomic_write(target: Path, document: str) -> None:
@@ -472,3 +508,17 @@ def _bounded_tuple(value: Any, maximum: int, label: str) -> tuple[Any, ...]:
             raise ValidationError(f"{label} exceeds the {maximum}-record limit")
         result.append(item)
     return tuple(result)
+
+
+def _bounded_pair(value: Any, label: str) -> tuple[Any, Any]:
+    """Snapshot exactly two values without ever exhausting an untrusted iterable."""
+
+    iterator = iter(value)
+    result: list[Any] = []
+    for item in iterator:
+        if len(result) == 2:
+            raise ValueError(f"{label} must contain node/device pairs")
+        result.append(item)
+    if len(result) != 2:
+        raise ValueError(f"{label} must contain node/device pairs")
+    return result[0], result[1]
