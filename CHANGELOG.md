@@ -11,6 +11,14 @@ All notable changes are recorded here. This project follows semantic versioning.
 - Bounded application retries with exception filters, independent-branch failure
   propagation, fail-fast and cooperative cancellation/time-budget policies.
 - An executable local-runtime example and a pinned whole-repository Ray gap audit.
+- Real local process actors with explicit trusted factories/method allowlists,
+  bounded FIFO mailboxes, asynchronous result handles, process crash detection,
+  serialization limits and drain/terminate/join lifecycle policies.
+
+### Fixed
+
+- Keep public actor status observation non-reaping, preventing POSIX readers
+  from consuming an exit status concurrently with broker cleanup.
 
 ## [0.5.0] - 2026-09-07
 

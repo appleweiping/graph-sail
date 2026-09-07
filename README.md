@@ -60,6 +60,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Reproducible greedy-versus-beam benchmark JSON with plan digests and host metadata.
 - Real local DAG execution through an explicit trusted callable registry, with
   dependency return values, bounded per-device concurrency and measured timings.
+- Local spawn-process actors with persistent state, an explicit method allowlist,
+  bounded FIFO mailboxes, asynchronous result handles and supervised shutdown.
 
 ## Run registered local functions
 
@@ -74,6 +76,11 @@ device and persistent-memory declarations. Application retries and cooperative
 cancellation are explicit options. See [Local execution](docs/local-execution.md)
 for the API, shared-object semantics and time-budget behavior. Planning and
 `simulate_plan` continue to report estimates independently of these observations.
+
+For isolated stateful workers, run `python examples/process_actor.py`. The
+[process actor API](docs/process-actors.md) uses trusted module-level factories,
+serializes arguments/results and owns the child process lifecycle. This is a
+local API, not a distributed cluster runtime or security sandbox.
 
 ## Installation
 

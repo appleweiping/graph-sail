@@ -167,6 +167,22 @@ Output values remain shared in-process objects. Cancellation stops new work and
 joins running callables; a noncooperating callable can exceed its requested time
 budget. See [Local execution](local-execution.md) for the complete contract.
 
+## Local process actor boundary
+
+`actors.py` creates a spawn worker from an explicit trusted factory and method
+allowlist. A parent broker serializes admission into a bounded FIFO mailbox and
+dispatches one method at a time over a private pipe. Return values are serialized
+copies, not the DAG executor's shared objects. The instance remains alive between
+methods until its owner closes it or a process/transport/runtime-budget failure
+ends it. Pending results are failed on worker loss; there is no implicit replay
+or actor state reconstruction. Close stops admission, drains within its budget,
+then joins or terminates the child. See [Process actors](process-actors.md).
+
+These actors do not consume graph device slots or claim physical resource
+reservation. Process isolation is not an untrusted-code sandbox. DAG actor
+placement, distributed ownership, durable recovery and async actor policies are
+separate, currently missing layers.
+
 ## Experimental boundary
 
 Calibration is a separate pure transformation before planning. It replaces only explicitly observed

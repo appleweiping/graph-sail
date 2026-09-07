@@ -1,5 +1,20 @@
 """Graph Sail public API."""
 
+from graph_sail.actors import (
+    ActorCall,
+    ActorClosedError,
+    ActorConfig,
+    ActorDefinition,
+    ActorDiedError,
+    ActorError,
+    ActorQueueFullError,
+    ActorRegistry,
+    ActorRemoteError,
+    ActorSerializationError,
+    ActorStartupError,
+    ActorTimeoutError,
+    ProcessActor,
+)
 from graph_sail.benchmark import BenchmarkResult, PlannerBenchmark, benchmark_graph
 from graph_sail.calibration import (
     CalibrationCell,
@@ -31,6 +46,18 @@ from graph_sail.planner import BeamPlanner, GreedyPlanner
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
 
 __all__ = [
+    "ActorCall",
+    "ActorClosedError",
+    "ActorConfig",
+    "ActorDefinition",
+    "ActorDiedError",
+    "ActorError",
+    "ActorQueueFullError",
+    "ActorRegistry",
+    "ActorRemoteError",
+    "ActorSerializationError",
+    "ActorStartupError",
+    "ActorTimeoutError",
     "BeamPlanner",
     "BenchmarkResult",
     "CalibrationCell",
@@ -50,6 +77,7 @@ __all__ = [
     "PlanResult",
     "PlannerBenchmark",
     "PlanningError",
+    "ProcessActor",
     "SimulationEvent",
     "SimulationResult",
     "TaskAttempt",

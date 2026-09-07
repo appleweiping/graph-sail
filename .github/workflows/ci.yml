@@ -52,7 +52,7 @@ jobs:
       - name: Security scan
         run: uv run --frozen --extra dev python -m bandit -q -c pyproject.toml -r src
       - name: Test
-        run: uv run --frozen --extra dev python -m coverage run -m pytest && uv run --frozen --extra dev python -m coverage report
+        run: uv run --frozen --extra dev python -m coverage run -m pytest && uv run --frozen --extra dev python -m coverage combine && uv run --frozen --extra dev python -m coverage report
       - name: Build distributions
         run: uv run --frozen --extra dev python -m build --no-isolation
 

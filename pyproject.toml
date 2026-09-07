@@ -74,6 +74,8 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = ["graph_sail"]
+concurrency = ["multiprocessing", "thread"]
+parallel = true
 
 [tool.coverage.report]
 fail_under = 95
