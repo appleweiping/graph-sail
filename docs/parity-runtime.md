@@ -80,3 +80,10 @@ wheel/sdist build, Twine and wheel-content checks passed. These are local
 correctness/build results, not remote CI or distributed performance evidence.
 The full 477-test suite also passed on WSL Ubuntu with Python 3.12.3; that Linux
 run did not collect coverage.
+
+The subsequent [actor capacity protocol](actor-capacity.md) measures real local
+worker calls and separates startup/processing/shutdown, with independent
+closed-form output and PID/cleanup checks. Two workloads retain every observed
+trial; small-request process overhead and end-to-end startup costs are explicit.
+This supplies local runtime evidence, not reference-comparable distributed,
+memory, GPU, failure-rate or network-transport performance; those remain open.
