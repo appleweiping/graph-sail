@@ -17,6 +17,7 @@ Run the same gates as CI before opening a pull request:
 python -m ruff check src tests
 python -m ruff format --check src tests
 python -m coverage run -m pytest
+python -m coverage combine
 python -m coverage report
 python -m graph_sail demo --output demo-output
 ```
