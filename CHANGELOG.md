@@ -4,7 +4,13 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- Trusted local callable execution over validated DAGs with real dependency return
+  values, global/per-device concurrency admission and measured attempt telemetry.
+- Bounded application retries with exception filters, independent-branch failure
+  propagation, fail-fast and cooperative cancellation/time-budget policies.
+- An executable local-runtime example and a pinned whole-repository Ray gap audit.
 
 ## [0.5.0] - 2026-09-07
 

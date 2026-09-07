@@ -11,6 +11,19 @@ from graph_sail.calibration import (
 )
 from graph_sail.errors import GraphSailError, OutputError, PlanningError, ValidationError
 from graph_sail.exact import ExactPlanner
+from graph_sail.execution import (
+    CancellationToken,
+    ExecutionConfig,
+    ExecutionResult,
+    TaskAttempt,
+    TaskCallable,
+    TaskCancelled,
+    TaskContext,
+    TaskDefinition,
+    TaskExecution,
+    TaskRegistry,
+    execute_graph,
+)
 from graph_sail.io import graph_from_dict, load_graph
 from graph_sail.models import GraphSpec, PlanResult
 from graph_sail.pareto import ParetoCandidate, ParetoReport, PlanCost, pareto_plans, plan_cost
@@ -22,7 +35,10 @@ __all__ = [
     "BenchmarkResult",
     "CalibrationCell",
     "CalibrationResult",
+    "CancellationToken",
     "ExactPlanner",
+    "ExecutionConfig",
+    "ExecutionResult",
     "GraphSailError",
     "GraphSpec",
     "GreedyPlanner",
@@ -36,9 +52,17 @@ __all__ = [
     "PlanningError",
     "SimulationEvent",
     "SimulationResult",
+    "TaskAttempt",
+    "TaskCallable",
+    "TaskCancelled",
+    "TaskContext",
+    "TaskDefinition",
+    "TaskExecution",
+    "TaskRegistry",
     "ValidationError",
     "benchmark_graph",
     "calibrate_graph",
+    "execute_graph",
     "graph_from_dict",
     "graph_to_dict",
     "load_graph",
