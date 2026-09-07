@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graph-sail"
-version = "0.4.0"
+version = "0.5.0"
 description = "Deterministic placement and scheduling for heterogeneous multimodal DAGs"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -4,6 +4,15 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.5.0] - 2026-09-07
+
+### Added
+
+- Added deterministic post-plan simulation with device utilization, busy-time, and peak-memory accounting.
+- Added bounded Pareto planning across latency, compute, transfer, and peak-memory objectives.
+
 ## [0.4.0] - 2026-09-07
 
 ### Added

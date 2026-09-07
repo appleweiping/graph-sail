@@ -153,6 +153,23 @@ returns a detached, stable JSON-ready object suitable for CI snapshots or downst
 
 ## How planning works
 
+### Simulation and Pareto planning
+
+After selecting a planner, inspect operational resource use and trade-offs:
+
+```python
+from graph_sail import pareto_plans, simulate_plan
+
+report = pareto_plans(graph, include_exact=False)
+simulation = simulate_plan(graph, report.candidates[0].plan)
+print(simulation.device_utilization, simulation.peak_memory_mb)
+```
+
+`simulate_plan()` checks device capacity and non-overlap, then reports deterministic
+busy time, utilization, and peak persistent memory. `pareto_plans()` keeps plans that
+are non-dominated across makespan, compute, transfer, and memory objectives; exact
+enumeration remains explicitly opt-in because its cost is exponential.
+
 Graph Sail first validates the document and computes a lexicographically stable topological order.
 For each node, it evaluates static compatibility, remaining persistent memory, predecessor readiness,
 cross-device transfer, and device availability.
