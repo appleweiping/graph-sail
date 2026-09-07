@@ -18,7 +18,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
-from multiprocessing.connection import Connection
+from multiprocessing.connection import Connection, wait
 from threading import Condition, Event, Thread, current_thread
 from types import MappingProxyType
 
@@ -446,7 +446,9 @@ class ProcessActor:
     @property
     def alive(self) -> bool:
         with self._condition:
-            return not self._process_closed and self._process.is_alive()
+            # Only the broker reaps the worker. Process.is_alive() can consume
+            # waitpid's exit status on POSIX and race with the broker's join().
+            return not self._process_closed and not wait([self._process.sentinel], timeout=0)
 
     @property
     def failure(self) -> ActorError | None:

@@ -15,6 +15,11 @@ All notable changes are recorded here. This project follows semantic versioning.
   bounded FIFO mailboxes, asynchronous result handles, process crash detection,
   serialization limits and drain/terminate/join lifecycle policies.
 
+### Fixed
+
+- Keep public actor status observation non-reaping, preventing POSIX readers
+  from consuming an exit status concurrently with broker cleanup.
+
 ## [0.5.0] - 2026-09-07
 
 ### Added

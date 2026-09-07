@@ -112,6 +112,12 @@ crash is checked even when no calls are pending. Accepted work abandoned by
 explicit shutdown raises `ActorClosedError`. New calls to a closed actor raise
 that error synchronously.
 
+`alive` observes the process's exit signal without reaping its exit status, so
+concurrent status readers do not compete with the broker's process cleanup.
+`exitcode` becomes available when the broker records it; `alive == False` alone
+does not mean the broker has finished settling pending calls. Use `close()` to
+wait for that cleanup.
+
 OS failures during terminate, kill, join, pipe close or process-handle close are
 collected while best-effort cleanup continues. Public close/terminate then raises
 `ActorDiedError`; `failure` records that cleanup error. A worker the OS refused

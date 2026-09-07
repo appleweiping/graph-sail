@@ -65,15 +65,18 @@ copied argument snapshots, cancellation before dispatch, ordinary exceptions wit
 continued state, serialization failures after execution, process death, timeout
 and drain/terminate/join behavior. Private-protocol and adversarial trusted-hook
 tests cover malformed messages, reentrant serialization and cancellation racing
-with failure settlement.
+with failure settlement. Concurrent lifecycle observations use a non-reaping
+process signal so status readers cannot consume the broker's POSIX exit status.
 
 This is not a process-backed DAG task scheduler. There is no automatic state
 recovery, cluster placement, distributed object reference protocol or actor
 resource admission. API breadth and repository-scale parity remain open.
 
-Local verification for this actor increment (Windows, Python 3.12.13): all 475
-repository tests passed, including 94 actor tests. Branch-aware coverage was
+Local verification for this actor increment (Windows, Python 3.12.13): all 477
+repository tests passed, including 96 actor tests. Branch-aware coverage was
 96.73% against the unchanged 95% repository gate; the actor module reached
 97.08%. Ruff lint/format, strict Mypy, Bandit, the executable actor example,
 wheel/sdist build, Twine and wheel-content checks passed. These are local
 correctness/build results, not remote CI or distributed performance evidence.
+The full 477-test suite also passed on WSL Ubuntu with Python 3.12.3; that Linux
+run did not collect coverage.

@@ -328,6 +328,82 @@ def test_idle_worker_death_is_detected():
     assert_reaped(actor)
 
 
+def test_public_alive_observation_never_reaps_worker(monkeypatch, tmp_path):
+    """POSIX poll()/is_alive() can consume waitpid's sole exit-status result."""
+    actor = ProcessActor(registry(), "counter")
+    observer = threading.current_thread()
+    popen = actor._process._popen
+    original_poll = popen.poll
+
+    def broker_only_poll(*args, **kwargs):
+        if threading.current_thread() is observer:
+            raise AssertionError("public alive must not poll/reap the worker")
+        return original_poll(*args, **kwargs)
+
+    monkeypatch.setattr(popen, "poll", broker_only_poll)
+    try:
+        started, release = tmp_path / "started", tmp_path / "release"
+        running = actor.submit("block", args=(str(started), str(release)))
+        wait_until(started.exists)
+        assert actor.alive
+        death = actor.submit("crash")
+        release.touch()
+        assert running.result(5) == 0
+        with pytest.raises(ActorDiedError):
+            death.result(5)
+        wait_until(lambda: not actor.alive)
+        actor.close()
+        assert actor.exitcode == 23
+    finally:
+        monkeypatch.undo()
+        actor.close(timeout=0)
+    assert_reaped(actor)
+
+
+def test_status_observer_and_crash_cleanup_can_run_concurrently(tmp_path):
+    actor = ProcessActor(registry(), "counter")
+    observed_alive, observed_dead = threading.Event(), threading.Event()
+    stop = threading.Event()
+    errors = []
+
+    def observe():
+        try:
+            while not stop.is_set():
+                if actor.alive:
+                    observed_alive.set()
+                else:
+                    observed_dead.set()
+                    return
+                stop.wait(0.001)
+        except BaseException as error:
+            errors.append(error)
+
+    observer = threading.Thread(target=observe)
+    observer.start()
+    try:
+        assert observed_alive.wait(5)
+        started, release = tmp_path / "started", tmp_path / "release"
+        running = actor.submit("block", args=(str(started), str(release)))
+        wait_until(started.exists)
+        death, pending = actor.submit("crash"), actor.submit("add")
+        release.touch()
+        assert running.result(5) == 0
+        for handle in (death, pending):
+            with pytest.raises(ActorDiedError):
+                handle.result(5)
+        actor.close()
+        assert observed_dead.wait(5)
+        assert actor.exitcode == 23
+        assert actor._cleanup_error is None
+    finally:
+        stop.set()
+        observer.join(5)
+        actor.close(timeout=0)
+    assert not observer.is_alive()
+    assert errors == []
+    assert_reaped(actor)
+
+
 @pytest.mark.parametrize("action", ["terminate", "close"])
 def test_forced_shutdown_stops_running_work_without_launching_next(action, tmp_path):
     actor = ProcessActor(registry(), "counter")
