@@ -71,9 +71,11 @@ from graph_sail.process_execution import (
     ProcessWorker,
     execute_process_graph,
 )
+from graph_sail.resources import UNITS_PER_RESOURCE, LogicalResources, ResourceUsage
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
 
 __all__ = [
+    "UNITS_PER_RESOURCE",
     "ActorCall",
     "ActorClosedError",
     "ActorConfig",
@@ -102,6 +104,7 @@ __all__ = [
     "LatencyObservation",
     "LocalObjectClient",
     "LocalObjectStore",
+    "LogicalResources",
     "NodeHandle",
     "ObjectCapacityError",
     "ObjectIntegrityError",
@@ -123,6 +126,7 @@ __all__ = [
     "ProcessTaskConfig",
     "ProcessTaskTimeout",
     "ProcessWorker",
+    "ResourceUsage",
     "SimulationEvent",
     "SimulationResult",
     "TaskAttempt",

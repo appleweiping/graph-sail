@@ -14,10 +14,12 @@ from threading import Event
 from types import MappingProxyType
 from typing import Literal, Protocol
 
+from graph_sail.actors import _preserve_failure
 from graph_sail.errors import GraphSailError, ValidationError
 from graph_sail.graph import predecessor_edges, successor_edges, topological_order
 from graph_sail.limits import MAX_DEVICES, MAX_NODES, MAX_TEXT_LENGTH
 from graph_sail.models import GraphSpec
+from graph_sail.resources import LogicalResources, ResourceUsage, _ResourcePool
 
 TaskStatus = Literal["succeeded", "failed", "skipped", "cancelled"]
 AttemptStatus = Literal["succeeded", "failed", "cancelled"]
@@ -142,6 +144,7 @@ class ExecutionConfig:
     device_workers: Mapping[str, int] = field(default_factory=dict)
     fail_fast: bool = False
     timeout_seconds: float | None = None
+    resources: LogicalResources | None = None
 
     def __post_init__(self) -> None:
         _count(self.max_workers, "max_workers", minimum=1, maximum=64)
@@ -157,6 +160,14 @@ class ExecutionConfig:
         if self.timeout_seconds is not None:
             _duration(self.timeout_seconds, "timeout_seconds", minimum=1e-6, maximum=86_400)
         object.__setattr__(self, "device_workers", MappingProxyType(slots))
+        if self.resources is not None:
+            if type(self.resources) is not LogicalResources:
+                raise ValidationError("resources must be LogicalResources")
+            object.__setattr__(
+                self,
+                "resources",
+                LogicalResources(self.resources.capacities, self.resources.requests),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,9 +227,10 @@ class ExecutionResult:
     cancellation_reason: str | None
     peak_in_flight_by_device: Mapping[str, int]
     reserved_memory_mb: Mapping[str, float]
+    resource_usage: ResourceUsage | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "kind": "graph-sail-local-execution",
             "schema_version": 1,
             "graph_name": self.graph_name,
@@ -230,6 +242,9 @@ class ExecutionResult:
             "peak_in_flight_by_device": dict(self.peak_in_flight_by_device),
             "reserved_memory_mb": dict(self.reserved_memory_mb),
         }
+        if self.resource_usage is not None:
+            result["resource_usage"] = self.resource_usage.to_dict()
+        return result
 
 
 def execute_graph(
@@ -269,12 +284,18 @@ def _prepare_execution(
     if not isinstance(options, ExecutionConfig):
         raise ValidationError("config must be ExecutionConfig")
     options = ExecutionConfig(
-        options.max_workers, options.device_workers, options.fail_fast, options.timeout_seconds
+        options.max_workers,
+        options.device_workers,
+        options.fail_fast,
+        options.timeout_seconds,
+        options.resources,
     )
     if cancel_event is not None and not isinstance(cancel_event, Event):
         raise ValidationError("cancel_event must be threading.Event")
     tasks = TaskRegistry(registry.tasks)
     assigned, memory = _validate_placement(graph, tasks, placements, options)
+    if options.resources is not None:
+        options.resources.validate_nodes(tuple(assigned))
     return tasks, assigned, memory, options
 
 
@@ -413,11 +434,13 @@ class _Runner:
         self.epoch = time.monotonic()
         self.invocation = _invoke if invocation is None else invocation
         self.terminal_observer = terminal_observer
+        self.resources = None if config.resources is None else _ResourcePool(config.resources)
 
     def run(self) -> ExecutionResult:
         pool = ThreadPoolExecutor(
             max_workers=self.config.max_workers, thread_name_prefix="graph-sail"
         )
+        failure: BaseException | None = None
         try:
             while len(self.completed) < len(self.order):
                 self._check_stop()
@@ -434,14 +457,29 @@ class _Runner:
                     for future in sorted(finished, key=lambda item: self.running[item]):
                         node = self.running.pop(future)
                         self.active[self.assigned[node]] -= 1
+                        if self.resources is not None:
+                            self.resources.release(node, len(self.attempts[node]) + 1)
                         self._finish(node, future.result())
                 elif self.delayed:
                     self.internal.wait(min(0.02, max(0, self.delayed[0][0] - time.monotonic())))
-        except BaseException:
+        except BaseException as error:
             self.internal.set()
+            failure = error
             raise
         finally:
-            pool.shutdown(wait=True, cancel_futures=True)
+            try:
+                pool.shutdown(wait=True, cancel_futures=True)
+                # submit() can enqueue work before raising. Neither a missing
+                # Future nor stop observation proves that the callable exited.
+                if self.resources is not None:
+                    self.resources.release_all()
+            except BaseException as cleanup:
+                if failure is None:
+                    raise
+                selected = _preserve_failure(failure, cleanup)
+                if selected is cleanup:
+                    raise
+                raise selected from None
         statuses = {task.status for task in self.completed.values()}
         status: Literal["succeeded", "failed", "cancelled"] = "succeeded"
         if "failed" in statuses:
@@ -459,6 +497,7 @@ class _Runner:
             self.stop_reason,
             MappingProxyType(dict(self.peak)),
             MappingProxyType(dict(self.memory)),
+            None if self.resources is None else self.resources.snapshot(),
         )
 
     def _check_stop(self) -> None:
@@ -488,16 +527,30 @@ class _Runner:
             self._check_stop()
             if self.stop_reason:
                 return
-            candidates = [
-                queue[0]
-                for device, queue in self.ready.items()
-                if queue and self.active[device] < self.config.device_workers.get(device, 1)
-            ]
+            if self.resources is None:
+                candidates = [
+                    queue[0]
+                    for device, queue in self.ready.items()
+                    if queue and self.active[device] < self.config.device_workers.get(device, 1)
+                ]
+            else:
+                candidates = [
+                    node
+                    for device, queue in self.ready.items()
+                    if self.active[device] < self.config.device_workers.get(device, 1)
+                    for node in queue
+                    if self.resources.fits(node)
+                ]
             if not candidates:
                 return
             node = min(candidates)
             device = self.assigned[node]
-            heapq.heappop(self.ready[device])
+            queue = self.ready[device]
+            if node == queue[0]:
+                heapq.heappop(queue)
+            else:
+                queue.remove(node)
+                heapq.heapify(queue)
             context = TaskContext(
                 node,
                 device,
@@ -507,6 +560,8 @@ class _Runner:
                 ),
                 self.token,
             )
+            if self.resources is not None:
+                self.resources.reserve(node, context.attempt)
             future = pool.submit(
                 self.invocation,
                 self.registry.definition(node),

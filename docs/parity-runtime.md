@@ -245,3 +245,56 @@ passed 78 cases. The last edit only flattened a lint-equivalent test context;
 its single targeted case was rerun. These focused results do not stand in for
 a full-repository run. Final static/package and hosted whole-suite evidence
 must be checked independently before this increment is Ready.
+
+## Fractional/custom local resource admission increment
+
+From signed `c5d7c4f6dee5b856534ab7bb4c28b64bf75939d0`, the shared scheduler
+now accepts an original immutable logical-resource policy with exact 0.0001
+quanta, all-or-none named demands, feasible-tail backfill and explicit per-attempt
+leases. [The full contract](logical-resources.md) distinguishes local admission
+from hardware isolation and distributed resource ownership. The frozen Ray
+[resource documentation](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/scheduling/resources.rst)
+was read for user-visible capacity/fractional scheduling scope; no implementation
+was copied and no hardware-visible-device behavior is claimed here.
+
+Five new scheduler tests first failed because resource configuration/accounting
+did not exist, then passed with the shared integration. The initial expanded
+test fixture also had an unclosed tuple; it was corrected before any passing
+result was claimed. An earlier attempted pytest `--no-cov` was unsupported in
+this environment and is not test evidence. Final focused tests cover real
+fractional thread and spawned-worker overlap, blocked-head/multi-resource
+backfill, device/global limits, retries, no-policy wire compatibility, stop/late
+results, raw control failures and uncertain executor-submission acknowledgment.
+
+Independent read-only review checked 10,008 quantized amounts under a deliberately
+hostile Decimal context, bounded traversal of an infinite lying-length Mapping,
+1,000 state-oracle steps and allocation-failure atomicity. Review found an
+oversized-name whitespace-copy inefficiency; a failing regression proved it,
+then length preflight was moved before normalization. The pure helper's final
+85 cases passed on Python 3.12.13 and 3.14.5, with 98.67% statement/branch coverage;
+only two defensive paths unreachable under finite shortest-float prerequisites
+remain uncovered. These checks do not replace the full-suite/package gates.
+
+The five-project whole-reference goal stays open. Remote node pools, physical
+accelerator isolation, actors' lifetime reservations, nested/generator/multiple
+return task APIs, distributed object/recovery and Data/Train/Tune/Serve/RLlib
+feature/workload surfaces are not closed by this local admission increment.
+
+Final Windows Python 3.12.13 whole-suite verification passed **835 tests** with
+three existing symlink-privilege skips in **665.00 seconds**; XML contains 838
+cases, zero failures/errors. Combined statement/branch coverage is **97.23%**
+(4,153/4,235 statements and 1,316/1,390 branches), retaining the 95% gate.
+RuntimeWarning and ResourceWarning were errors. This full source includes all
+117 new cases: 85 pure resource tests and 32 real scheduler/lifecycle/example
+tests. An earlier 116-case focused run passed in 12.44s; the example regression
+was added afterward and is covered by the final full suite. Resource helpers
+reached 98.67%, shared execution 99.15%, and existing handles 100%.
+
+Ruff lint/format (71 files), strict Mypy (24 source modules), Bandit, frozen
+61-package lock and whitespace checks passed. The final source wheel and sdist
+passed build, strict metadata and wheel-content gates. An isolated offline
+wheel-only environment verified all 25 package files against wheel/source/
+installed bytes and ran the actual fractional-concurrency example to result 42,
+with three reservations/releases and exact integer peaks. Package identity is
+rechecked after this documentation-only evidence update. These are local gates;
+hosted CI/CodeQL and protected human review are not implied by them.
