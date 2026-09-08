@@ -41,6 +41,17 @@ from graph_sail.execution import (
 )
 from graph_sail.io import graph_from_dict, load_graph
 from graph_sail.models import GraphSpec, PlanResult
+from graph_sail.objects import (
+    LocalObjectClient,
+    LocalObjectStore,
+    ObjectCapacityError,
+    ObjectIntegrityError,
+    ObjectRef,
+    ObjectStoreConfig,
+    ObjectStoreError,
+    ObjectStoreStats,
+    ObjectUnavailableError,
+)
 from graph_sail.pareto import ParetoCandidate, ParetoReport, PlanCost, pareto_plans, plan_cost
 from graph_sail.planner import BeamPlanner, GreedyPlanner
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
@@ -70,6 +81,15 @@ __all__ = [
     "GraphSpec",
     "GreedyPlanner",
     "LatencyObservation",
+    "LocalObjectClient",
+    "LocalObjectStore",
+    "ObjectCapacityError",
+    "ObjectIntegrityError",
+    "ObjectRef",
+    "ObjectStoreConfig",
+    "ObjectStoreError",
+    "ObjectStoreStats",
+    "ObjectUnavailableError",
     "OutputError",
     "ParetoCandidate",
     "ParetoReport",

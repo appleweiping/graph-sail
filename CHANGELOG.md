@@ -16,6 +16,9 @@ All notable changes are recorded here. This project follows semantic versioning.
   serialization limits and drain/terminate/join lifecycle policies.
 - An actual process-actor capacity protocol with independent closed-form output
   verification, raw per-trial lifecycle timings and honest local workload observations.
+- Context-owned immutable byte storage with bounded local files, strict JSON
+  references, verified cross-process reads, no-replace publication, explicit
+  release and failure-retaining capacity accounting; executable actor integration.
 
 ### Fixed
 
