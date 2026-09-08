@@ -23,6 +23,7 @@ from threading import Condition, Event, Thread, current_thread
 from types import MappingProxyType
 from typing import Protocol
 
+from graph_sail._completion import _await_snapshot, _CompletionHub, _Snapshot
 from graph_sail.errors import GraphSailError, ValidationError
 
 
@@ -320,6 +321,7 @@ class ActorCall:
         self._request_id = request_id
         self._method = method
         self._future: Future[object] = Future()
+        self._completion = _CompletionHub()
         self._elapsed_seconds: float | None = None
 
     @property
@@ -335,6 +337,35 @@ class ActorCall:
             _seconds(timeout, "timeout")
         return self._future.result(timeout)
 
+    async def result_async(self, timeout: float | None = None) -> object:
+        """Await a borrowed result; cancelling this wait never cancels the request.
+
+        Source failures get fresh AsyncSourceError/AsyncSourceControlError
+        wrappers. Explicit request cancellation is AsyncSourceCancelledError.
+        Actor ownership and shutdown remain with the original ProcessActor.
+        """
+        if timeout is not None:
+            _seconds(timeout, "timeout")
+        return await _await_snapshot(self._completion, self._async_snapshot, timeout)
+
+    def _async_snapshot(self) -> _Snapshot:
+        if not self._future.done():
+            return _Snapshot(False)
+        if self._future.cancelled():
+            return _Snapshot(True, cancelled=True)
+        failure = self._future.exception(timeout=0)
+        if failure is not None:
+            return _Snapshot(True, failure=failure)
+        return _Snapshot(True, value=self._future.result(timeout=0))
+
+    def _set_result(self, value: object) -> None:
+        self._future.set_result(value)
+        self._completion.notify(terminal=True)
+
+    def _set_exception(self, error: BaseException) -> None:
+        self._future.set_exception(error)
+        self._completion.notify(terminal=True)
+
     def exception(self, timeout: float | None = None) -> BaseException | None:
         if timeout is not None:
             _seconds(timeout, "timeout")
@@ -342,7 +373,10 @@ class ActorCall:
 
     def cancel(self) -> bool:
         """Cancel only if the broker has not dispatched the request yet."""
-        return self._future.cancel()
+        cancelled = self._future.cancel()
+        if cancelled:
+            self._completion.notify(terminal=True)
+        return cancelled
 
     def cancelled(self) -> bool:
         return self._future.cancelled()
@@ -703,9 +737,9 @@ class ProcessActor:
                 with self._condition:
                     del self._pending[handle.request_id]
                 if remote_error is not None:
-                    handle._future.set_exception(remote_error)
+                    handle._set_exception(remote_error)
                 else:
-                    handle._future.set_result(value)
+                    handle._set_result(value)
             self._connection.send_bytes(_pack(None, self.config.max_message_bytes))
             self._process.join(0.5)
         except ActorError as error:
@@ -725,7 +759,7 @@ class ProcessActor:
                 for handle in pending:
                     # Atomically prevent cancellation racing with failure delivery.
                     if handle._future.running() or handle._future.set_running_or_notify_cancel():
-                        handle._future.set_exception(failure or ActorClosedError("actor closed"))
+                        handle._set_exception(failure or ActorClosedError("actor closed"))
             finally:
                 self._cleanup_process(
                     graceful=failure is None or isinstance(failure, ActorDiedError)

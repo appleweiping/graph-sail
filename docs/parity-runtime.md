@@ -10,6 +10,7 @@ The target remains the entire reference repository. These increments add actual
 local task execution, local process actors and process-backed DAG invocation;
 they do not establish Ray parity.
 The algorithms and API implementation here were authored independently.
+The async-result follow-up below was audited on 2026-09-08 against the same pin.
 
 The process-DAG follow-up retains this exact frozen reference rather than moving
 the target. Public task/cancellation contracts were rechecked for that lane;
@@ -17,8 +18,8 @@ standard-library spawn and pipe lifecycle documentation informed its OS boundary
 
 | Reference subsystem and pinned source | Current Graph Sail evidence | Remaining contracts |
 | --- | --- | --- |
-| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles and selective terminal-node result retrieval | Cross-node workers, per-task cancellation, nested tasks, generators, multiple returns, async event-loop adapters and dashboard event delivery |
-| [Resource scheduling](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/scheduling/resources.rst): logical CPU/GPU/custom resources and capacities | Per-device logical slots, global thread limit, persistent-memory admission and node compatibility checks | Fractional/custom task resources, locality-aware placement, GPU visibility control, placement groups, cluster capacity and autoscaling; local slots do not acquire hardware |
+| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles, selective node results, bounded native thread-generator streams and event-loop result/wait methods | Cross-node workers, per-task cancellation, nested tasks, process/distributed generators, multiple returns and dashboard event delivery |
+| [Resource scheduling](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/scheduling/resources.rst): logical CPU/GPU/custom resources and capacities | Per-device logical slots, global thread limit, persistent-memory admission, node compatibility, exact fractional/custom logical task demands with all-or-none admission and joined accounting on both local backends | Locality-aware placement, GPU visibility control, placement groups, cluster capacity and autoscaling; logical resource admission does not acquire hardware |
 | [Task fault tolerance](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/fault_tolerance/tasks.rst): application exception policies, worker failure retries, cancellation and object reconstruction | Bounded application retries with original child exception filtering; local crash detection, joined replacement for independent work, irreversible cooperative EOF cancellation and noncooperative termination | Automatic crash replay with explicit side-effect policy, machine failure recovery, lost-object reconstruction, durable lineage and distributed cancellation |
 | [Actors](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/actors.rst): stateful remote workers, handles, methods and concurrency models | Actual local spawn-process actors, explicit trusted factories/method allowlists, FIFO mailboxes, bounded pending calls, asynchronous handles, serialized objects, crash detection and joined shutdown | Multi-node actor placement, named/shared actor ownership, actor-to-actor transport, async/threaded actor policy, checkpointed recovery and integration with DAG resource admission |
 | [Objects](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/objects.rst): distributed object-reference semantics | Thread DAG outputs remain explicitly shared; process actors use bounded private pipes; an actual context-owned file-backed byte store adds strict small references, verified independent readers and explicit release/capacity accounting | Distributed ownership/reference counting, shared-memory transport, implicit dereferencing, arbitrary object serialization, spilling and reconstruction |
@@ -339,3 +340,62 @@ lock and whitespace gates pass. The wheel/sdist and fresh offline isolated
 installation previously matched all 26 package files and ran the actual
 event-synchronized stream example; final artifacts are rechecked after this
 evidence-only documentation and test update. Hosted checks remain separate.
+
+## Increment: bounded event-loop result and selected-terminal waits
+
+Actor requests, whole executions and node handles now offer explicit coroutine
+methods over their existing source state. A shared original completion hub
+coalesces loop notifications, checks snapshot epochs before subscribing, caps
+one execution plus all node waiters at 256, and separately caps pending loop
+slots. Subscriptions are removable, notifications hold weak references and empty
+contexts, and waiter cancellation/timeout does not cancel shared work. Original
+synchronous methods and explicit owner closing remain authoritative.
+
+The frozen reference's
+[ObjectRefs as futures public guide](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/actors/async_api.rst)
+and Python's first-party
+[Future](https://docs.python.org/3/library/asyncio-future.html) and
+[thread-safe loop scheduling](https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.call_soon_threadsafe)
+contracts informed this independently authored local subset. It does not expose
+Ray-compatible ObjectRef futures, execute async actor methods, make sync startup
+or close nonblocking, or add distributed subscriptions. Local thread-generator
+streams and fractional/custom logical task resources were already implemented
+by preceding increments; the main matrix now explicitly reflects those subsets.
+Their process/distributed/hardware-control gaps remain open.
+
+See [async results](async-results.md) and the executable offline actor/DAG example.
+New async source errors deliberately use fresh ordinary/control wrappers rather
+than repeatedly re-raising and extending a shared source traceback. Actor queue
+cancellation, application cancellation of a waiter, and unsuccessful node status
+remain distinct outcomes.
+
+The first four missing-API tests failed before implementation. During integration,
+a misplaced notify statement caused one collection SyntaxError and was corrected.
+The new real actor fixture initially used positional submit arguments and a
+nonexistent `closed` attribute; these two fixture errors were corrected to the
+existing `args=tuple` and `alive` APIs, without production API or budget changes.
+These intermediate failures are not successful gate results. A focused group of
+131 tests then passed (86 new async plus 45 existing synchronous-handle cases),
+with 100% statement/branch coverage of the integrated handle module. Five further
+boundary regressions were added before final-source gates. No entire-reference
+parity or throughput claim is made.
+
+Final Windows Python **3.12.13** whole-suite verification passed **998 tests**
+with three existing symlink-privilege skips in **863.63 seconds**. JUnit records
+1001 cases, zero errors/failures, and 863.445 seconds. Combined coverage is
+**97.5052%** (4637/4719 statements and 1460/1534 branches), retaining the original
+95% gate. ResourceWarning and RuntimeWarning were errors. The new completion hub
+has **100%** coverage of all 188 statements and 66 branches; the integrated
+handle module has **100%** across 235 statements and 60 branches. The final full
+run includes all 91 new cases and unchanged actor/process/resource/stream tests.
+All 91 new cases separately passed on Python **3.14.5** in **9.22 seconds**.
+
+Ruff lint/format (81 files), strict Mypy (26 source modules), Bandit, the frozen
+61-package lock and whitespace gates pass. The sdist-to-wheel build, strict
+Twine and wheel-content checks pass. A new wheel-only environment ran the actual
+offline example with `python -I`, observing actor totals `[2, 7, 18]`, partial
+ready nodes `('c', 'a')`, and final results `{'a': 6, 'b': 7, 'c': 12}` with
+explicitly joined owners. All 27 runtime package files match source, wheel and
+isolated installation byte-for-byte; package metadata matches, and all 13
+increment files match the sdist. Final packages are rechecked after this
+documentation-only evidence update. Hosted CI/CodeQL results remain separate.

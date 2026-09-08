@@ -1,5 +1,12 @@
 """Graph Sail public API."""
 
+from graph_sail._completion import (
+    MAX_ASYNC_WAITERS,
+    AsyncSourceCancelledError,
+    AsyncSourceControlError,
+    AsyncSourceError,
+    AsyncWaitLimitError,
+)
 from graph_sail.actors import (
     ActorCall,
     ActorClosedError,
@@ -83,6 +90,7 @@ from graph_sail.task_streams import (
 )
 
 __all__ = [
+    "MAX_ASYNC_WAITERS",
     "UNITS_PER_RESOURCE",
     "ActorCall",
     "ActorClosedError",
@@ -96,6 +104,10 @@ __all__ = [
     "ActorSerializationError",
     "ActorStartupError",
     "ActorTimeoutError",
+    "AsyncSourceCancelledError",
+    "AsyncSourceControlError",
+    "AsyncSourceError",
+    "AsyncWaitLimitError",
     "BeamPlanner",
     "BenchmarkResult",
     "CalibrationCell",

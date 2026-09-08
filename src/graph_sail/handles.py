@@ -11,8 +11,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from threading import Condition, Event, Thread, current_thread
 from types import TracebackType
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
+from graph_sail._completion import _await_snapshot, _CompletionHub, _Snapshot
 from graph_sail.actors import _preserve_failure
 from graph_sail.errors import GraphSailError, ValidationError
 from graph_sail.execution import (
@@ -75,6 +76,17 @@ class NodeHandle(Generic[_Result]):
             raise TaskNotSuccessful(execution)
         return value
 
+    async def execution_async(self, timeout: float | None = None) -> TaskExecution:
+        """Await terminal metadata without a waiting thread or cancellation transfer."""
+        return (await self._owner._node_async(self.node_id, timeout))[0]
+
+    async def result_async(self, timeout: float | None = None) -> object:
+        """Await a borrowed success value; failure/skip/cancellation is not success."""
+        execution, value = await self._owner._node_async(self.node_id, timeout)
+        if execution.status != "succeeded":
+            raise TaskNotSuccessful(execution)
+        return value
+
 
 class ExecutionHandle(Generic[_Result]):
     """Own a scheduler controller until explicitly closed/joined.
@@ -87,6 +99,7 @@ class ExecutionHandle(Generic[_Result]):
 
     def __init__(self, _runner: _Runner, _run: Callable[[], _Result], _stop: Event) -> None:
         self._condition = Condition()
+        self._completion = _CompletionHub()
         self._terminal: dict[str, tuple[TaskExecution, object]] = {}
         self._nodes = tuple(_runner.order)
         self._node_set = frozenset(self._nodes)
@@ -171,6 +184,54 @@ class ExecutionHandle(Generic[_Result]):
                 raise RuntimeError("finished execution has no result")
             return self._result
 
+    async def result_async(self, timeout: float | None = None) -> _Result:
+        """Await final cleanup/result; wait cancellation never requests graph stop.
+
+        Infrastructure failures are fresh async wrappers with the original cause,
+        unlike the synchronous API's re-raise. Explicit close/join remains required.
+        """
+        _timeout(timeout)
+
+        def snapshot() -> _Snapshot:
+            with self._condition:
+                if not self._finished:
+                    return _Snapshot(False)
+                if self._error is not None:
+                    return _Snapshot(True, failure=self._error)
+                if self._result is None:
+                    return _Snapshot(True, failure=RuntimeError("finished execution has no result"))
+                return _Snapshot(True, self._result)
+
+        return cast(_Result, await _await_snapshot(self._completion, snapshot, timeout))
+
+    async def wait_async(
+        self,
+        node_ids: tuple[str, ...] | None = None,
+        *,
+        count: int = 1,
+        timeout: float | None = None,
+    ) -> WaitResult:
+        """Await selected terminals; timeout returns the current ordered partial set.
+
+        All node and execution async waits share one bounded notification hub.
+        This neither consumes results nor owns or cancels the underlying work.
+        """
+        selected = self._selection(node_ids)
+        _count(count, "count", minimum=0, maximum=len(selected))
+        _timeout(timeout)
+
+        def snapshot() -> _Snapshot:
+            with self._condition:
+                ready = tuple(node for node in selected if node in self._terminal)
+                pending = tuple(node for node in selected if node not in self._terminal)
+                if self._finished and len(ready) < count and self._error is not None:
+                    return _Snapshot(True, failure=self._error)
+                return _Snapshot(self._finished or len(ready) >= count, WaitResult(ready, pending))
+
+        return cast(
+            WaitResult, await _await_snapshot(self._completion, snapshot, timeout, partial=True)
+        )
+
     def close(self, timeout: float | None = None) -> None:
         """Request cancellation and join; timeout retains ownership for a later retry.
 
@@ -247,11 +308,35 @@ class ExecutionHandle(Generic[_Result]):
                 self._result = result
                 self._finished = True
                 self._condition.notify_all()
+        self._completion.notify(terminal=True)
 
     def _publish(self, execution: TaskExecution, value: object) -> None:
         with self._condition:
             self._terminal[execution.node_id] = (execution, value)
             self._condition.notify_all()
+        self._completion.notify()
+
+    async def _node_async(
+        self, node_id: str, timeout: float | None
+    ) -> tuple[TaskExecution, object]:
+        self._validate_node(node_id)
+        _timeout(timeout)
+
+        def snapshot() -> _Snapshot:
+            with self._condition:
+                if node_id in self._terminal:
+                    return _Snapshot(True, self._terminal[node_id])
+                if not self._finished:
+                    return _Snapshot(False)
+                if self._error is not None:
+                    return _Snapshot(True, failure=self._error)
+                return _Snapshot(
+                    True, failure=RuntimeError("finished execution has no terminal node result")
+                )
+
+        return cast(
+            tuple[TaskExecution, object], await _await_snapshot(self._completion, snapshot, timeout)
+        )
 
     def _validate_node(self, node_id: str) -> None:
         if not isinstance(node_id, str) or node_id not in self._node_set:

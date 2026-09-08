@@ -41,6 +41,9 @@ self-contained and loads no remote scripts, fonts, or analytics.
 
 ## Features
 
+- Bounded event-driven `asyncio` result and selected-terminal waits for actor and
+  DAG handles, with wait-only cancellation and unchanged explicit owner cleanup;
+  see [async results](docs/async-results.md) and [offline example](examples/async_results.py).
 - Bounded local native-generator task streams: results become consumable while
   later work is still running, with pre-pull backpressure, explicit yield limits,
   cooperative cancellation and owned thread cleanup; see [task streams](docs/task-streams.md)
