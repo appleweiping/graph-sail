@@ -27,6 +27,7 @@ from graph_sail.calibration import (
 from graph_sail.errors import GraphSailError, OutputError, PlanningError, ValidationError
 from graph_sail.exact import ExactPlanner
 from graph_sail.execution import (
+    CancellationSignal,
     CancellationToken,
     ExecutionConfig,
     ExecutionResult,
@@ -54,6 +55,14 @@ from graph_sail.objects import (
 )
 from graph_sail.pareto import ParetoCandidate, ParetoReport, PlanCost, pareto_plans, plan_cost
 from graph_sail.planner import BeamPlanner, GreedyPlanner
+from graph_sail.process_execution import (
+    ProcessAttempt,
+    ProcessExecutionResult,
+    ProcessTaskConfig,
+    ProcessTaskTimeout,
+    ProcessWorker,
+    execute_process_graph,
+)
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
 
 __all__ = [
@@ -73,6 +82,7 @@ __all__ = [
     "BenchmarkResult",
     "CalibrationCell",
     "CalibrationResult",
+    "CancellationSignal",
     "CancellationToken",
     "ExactPlanner",
     "ExecutionConfig",
@@ -98,6 +108,11 @@ __all__ = [
     "PlannerBenchmark",
     "PlanningError",
     "ProcessActor",
+    "ProcessAttempt",
+    "ProcessExecutionResult",
+    "ProcessTaskConfig",
+    "ProcessTaskTimeout",
+    "ProcessWorker",
     "SimulationEvent",
     "SimulationResult",
     "TaskAttempt",
@@ -111,6 +126,7 @@ __all__ = [
     "benchmark_graph",
     "calibrate_graph",
     "execute_graph",
+    "execute_process_graph",
     "graph_from_dict",
     "graph_to_dict",
     "load_graph",

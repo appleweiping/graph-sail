@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from multiprocessing.connection import Connection, wait
 from threading import Condition, Event, Thread, current_thread
 from types import MappingProxyType
+from typing import Protocol
 
 from graph_sail.errors import GraphSailError, ValidationError
 
@@ -61,6 +62,25 @@ class ActorRemoteError(ActorError):
 
 class ActorStartupError(ActorError):
     """A registered factory could not produce a usable actor."""
+
+
+class _CancellationConnection(Protocol):
+    """Common spawn pipe subset on Windows and POSIX (internal task bootstrap)."""
+
+    def close(self) -> None: ...
+
+    def poll(self, timeout: float = 0.0) -> bool: ...
+
+
+def _preserve_failure(primary: BaseException, secondary: BaseException) -> BaseException:
+    """Keep a primary control exception, without hiding a new cleanup interrupt."""
+    if primary is secondary:
+        return primary
+    if isinstance(primary, Exception) and not isinstance(secondary, Exception):
+        secondary.add_note(f"earlier failure: {type(primary).__name__}")
+        return secondary
+    primary.add_note(f"secondary cleanup failure: {type(secondary).__name__}")
+    return primary
 
 
 def _integer(value: int, name: str, maximum: int, minimum: int = 1) -> None:
@@ -233,12 +253,26 @@ def _request_fields(
     return request_id, name, args, ProcessActor._arguments(args, kwargs)
 
 
-def _worker(connection: Connection, startup: bytes, limit: int) -> None:
+def _worker(
+    connection: Connection,
+    startup: bytes,
+    limit: int,
+    task_cancellation: _CancellationConnection | None = None,
+) -> None:
     """Top-level spawn target; registered methods execute sequentially here."""
     try:
         try:
             factory, names, args, kwargs = _startup_fields(_unpack(startup))
-            instance = _synchronous(factory(*args, **kwargs))
+            if task_cancellation is None:
+                instance = _synchronous(factory(*args, **kwargs))
+            else:
+                # An OS handle is passed only by the internal task bootstrap,
+                # never through the serialized actor request/startup protocol.
+                from graph_sail.process_execution import _TaskWorker
+
+                if factory is not _TaskWorker or names != ("invoke",) or args or kwargs:
+                    raise TypeError("cancellation bootstrap is restricted to the task worker")
+                instance = _TaskWorker(task_cancellation)
             methods: dict[str, Callable[..., object]] = {}
             for name in names:
                 method = getattr(instance, name)
@@ -268,7 +302,11 @@ def _worker(connection: Connection, startup: bytes, limit: int) -> None:
         # Parent close/death makes the private pipe unusable; no replay is safe.
         return
     finally:
-        connection.close()
+        try:
+            connection.close()
+        finally:
+            if task_cancellation is not None:
+                task_cancellation.close()
 
 
 class ActorCall:
@@ -338,6 +376,52 @@ class ProcessActor:
         kwargs: Mapping[str, object] | None = None,
         config: ActorConfig | None = None,
     ) -> None:
+        self._initialize(registry, name, args=args, kwargs=kwargs, config=config)
+
+    @classmethod
+    def _for_task_worker(cls, config: ActorConfig) -> tuple[ProcessActor, _CancellationConnection]:
+        """Private bootstrap: child owns receive-only EOF cancellation observation.
+
+        The returned sender has one owner, the process task backend. Closing it
+        is irrevocable cancellation; a cancelled worker must never be reused.
+        """
+        from graph_sail.process_execution import _TaskWorker
+
+        registry = ActorRegistry({"task_worker": ActorDefinition(_TaskWorker, ("invoke",))})
+        receiver, sender = multiprocessing.get_context("spawn").Pipe(duplex=False)
+        ready = False
+        try:
+            actor = cls.__new__(cls)
+            actor._initialize(registry, "task_worker", config=config, task_cancellation=receiver)
+            ready = True
+            receiver.close()
+        except BaseException as error:
+            primary = error
+            for endpoint in (receiver, sender):
+                try:
+                    endpoint.close()
+                except BaseException as cleanup:
+                    primary = _preserve_failure(primary, cleanup)
+            if ready:
+                try:
+                    actor.terminate()
+                except BaseException as cleanup:
+                    primary = _preserve_failure(primary, cleanup)
+            if primary is not error:
+                raise primary from error
+            raise
+        return actor, sender
+
+    def _initialize(
+        self,
+        registry: ActorRegistry,
+        name: str,
+        *,
+        args: tuple[object, ...] = (),
+        kwargs: Mapping[str, object] | None = None,
+        config: ActorConfig | None = None,
+        task_cancellation: _CancellationConnection | None = None,
+    ) -> None:
         if not isinstance(registry, ActorRegistry):
             raise ValidationError("registry must be an ActorRegistry")
         _identifier(name, "actor name")
@@ -379,7 +463,9 @@ class ProcessActor:
         self._connection, child = context.Pipe()
         self._process = context.Process(
             target=_worker,
-            args=(child, startup, config.max_message_bytes),
+            args=(child, startup, config.max_message_bytes)
+            if task_cancellation is None
+            else (child, startup, config.max_message_bytes, task_cancellation),
             name=f"graph-sail-actor-{name}",
             daemon=True,
         )
