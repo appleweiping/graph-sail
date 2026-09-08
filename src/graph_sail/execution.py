@@ -12,7 +12,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from threading import Event
 from types import MappingProxyType
-from typing import Literal
+from typing import Literal, Protocol
 
 from graph_sail.errors import GraphSailError, ValidationError
 from graph_sail.graph import predecessor_edges, successor_edges, topological_order
@@ -25,6 +25,15 @@ AttemptStatus = Literal["succeeded", "failed", "cancelled"]
 
 class TaskCancelled(GraphSailError):
     """A registered task cooperatively acknowledged a cancellation request."""
+
+
+class CancellationSignal(Protocol):
+    """Read-only stop observation, implemented by thread and process backends."""
+
+    @property
+    def cancelled(self) -> bool: ...
+
+    def raise_if_cancelled(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,8 +56,8 @@ class CancellationToken:
 class TaskContext:
     """Invocation metadata and immediate predecessor results.
 
-    The mapping is read-only; its values are shared in-process objects. Callers
-    own their immutability or synchronization. ``device`` is a logical placement,
+    The mapping is read-only. Thread execution shares its values; process
+    execution transfers serialized snapshots. ``device`` is a logical placement,
     not an acquired GPU handle or an operating-system affinity guarantee.
     """
 
@@ -56,7 +65,7 @@ class TaskContext:
     device: str
     attempt: int
     dependencies: Mapping[str, object]
-    cancellation: CancellationToken
+    cancellation: CancellationSignal
 
 
 TaskCallable = Callable[[TaskContext], object]
@@ -239,6 +248,20 @@ def execute_graph(
     unrelated branches continue unless fail_fast requests cancellation.
     """
 
+    tasks, assigned, memory, options = _prepare_execution(
+        graph, registry, placements, config, cancel_event
+    )
+    return _Runner(graph, tasks, assigned, memory, options, cancel_event).run()
+
+
+def _prepare_execution(
+    graph: GraphSpec,
+    registry: TaskRegistry,
+    placements: Mapping[str, str],
+    config: ExecutionConfig | None,
+    cancel_event: Event | None,
+) -> tuple[TaskRegistry, dict[str, str], dict[str, float], ExecutionConfig]:
+    """Shared admission checks; neither backend starts work before this returns."""
     if not isinstance(graph, GraphSpec) or not isinstance(registry, TaskRegistry):
         raise ValidationError("graph and registry must be GraphSpec and TaskRegistry")
     graph.validate()
@@ -252,7 +275,7 @@ def execute_graph(
         raise ValidationError("cancel_event must be threading.Event")
     tasks = TaskRegistry(registry.tasks)
     assigned, memory = _validate_placement(graph, tasks, placements, options)
-    return _Runner(graph, tasks, assigned, memory, options, cancel_event).run()
+    return tasks, assigned, memory, options
 
 
 def _validate_placement(
@@ -295,6 +318,9 @@ class _Outcome:
     attempt: TaskAttempt
     value: object = None
     retryable: bool = False
+
+
+_Invocation = Callable[[TaskDefinition, TaskContext, float, float], _Outcome]
 
 
 def _invoke(
@@ -355,6 +381,8 @@ class _Runner:
         memory: dict[str, float],
         config: ExecutionConfig,
         external: Event | None,
+        *,
+        invocation: _Invocation | None = None,
     ) -> None:
         self.graph, self.registry, self.assigned, self.memory, self.config = (
             graph,
@@ -382,6 +410,7 @@ class _Runner:
         self.token = CancellationToken(self.internal, external)
         self.stop_reason: str | None = None
         self.epoch = time.monotonic()
+        self.invocation = _invoke if invocation is None else invocation
 
     def run(self) -> ExecutionResult:
         pool = ThreadPoolExecutor(
@@ -477,7 +506,7 @@ class _Runner:
                 self.token,
             )
             future = pool.submit(
-                _invoke,
+                self.invocation,
                 self.registry.definition(node),
                 context,
                 self.epoch,
@@ -559,6 +588,7 @@ def _duration(value: object, name: str, *, minimum: float, maximum: float) -> No
 
 
 __all__ = [
+    "CancellationSignal",
     "CancellationToken",
     "ExecutionConfig",
     "ExecutionResult",

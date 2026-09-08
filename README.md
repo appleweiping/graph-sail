@@ -64,6 +64,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
   bounded FIFO mailboxes, asynchronous result handles and supervised shutdown.
 - Context-owned local immutable byte objects with strict transferable references,
   independent read limits, content verification and explicit release/cleanup.
+- Process-backed DAG tasks reuse the same scheduler with actual child dependency
+  values, application retries, native cooperative cancellation and joined retirement.
 
 ## Run registered local functions
 
@@ -89,6 +91,12 @@ The [local object API](docs/local-object-storage.md) reads a generated 2 MiB obj
 inside a real actor while passing only its small reference through a 4 KiB
 message boundary. Readers return verified byte copies; this is not zero-copy
 transport or distributed reference counting.
+
+For a complete spawned DAG, run `python examples/process_graph.py`. The
+[process execution API](docs/process-execution.md) reuses logical device admission
+and dependency scheduling, explicitly transfers small object references, and
+separates worker callback timing from transport/lifecycle timing. Broken or
+timed-out invocations are not automatically replayed.
 
 ## Installation
 

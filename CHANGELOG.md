@@ -19,6 +19,11 @@ All notable changes are recorded here. This project follows semantic versioning.
 - Context-owned immutable byte storage with bounded local files, strict JSON
   references, verified cross-process reads, no-replace publication, explicit
   release and failure-retaining capacity accounting; executable actor integration.
+- Actual local spawned DAG tasks on the shared execution scheduler and actor
+  transport, with child-side application retry classification, explicit object-ref
+  dependencies, irreversible native EOF cancellation and joined worker retirement.
+- Process-specific callback/transport/lifecycle diagnostics, an executable offline
+  two-reader object DAG, and failure/cancellation/cleanup regression coverage.
 
 ### Fixed
 
