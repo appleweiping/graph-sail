@@ -17,7 +17,7 @@ standard-library spawn and pipe lifecycle documentation informed its OS boundary
 
 | Reference subsystem and pinned source | Current Graph Sail evidence | Remaining contracts |
 | --- | --- | --- |
-| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, one shared DAG scheduler with real thread or spawned-process invocation, dependency snapshots/object refs, bounded logical slots and measured attempt events | Cross-node workers, public asynchronous task result handles, partial-result retrieval, nested tasks, generators, multiple returns and dashboard event delivery |
+| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles and selective terminal-node result retrieval | Cross-node workers, per-task cancellation, nested tasks, generators, multiple returns, async event-loop adapters and dashboard event delivery |
 | [Resource scheduling](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/scheduling/resources.rst): logical CPU/GPU/custom resources and capacities | Per-device logical slots, global thread limit, persistent-memory admission and node compatibility checks | Fractional/custom task resources, locality-aware placement, GPU visibility control, placement groups, cluster capacity and autoscaling; local slots do not acquire hardware |
 | [Task fault tolerance](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/fault_tolerance/tasks.rst): application exception policies, worker failure retries, cancellation and object reconstruction | Bounded application retries with original child exception filtering; local crash detection, joined replacement for independent work, irreversible cooperative EOF cancellation and noncooperative termination | Automatic crash replay with explicit side-effect policy, machine failure recovery, lost-object reconstruction, durable lineage and distributed cancellation |
 | [Actors](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/actors.rst): stateful remote workers, handles, methods and concurrency models | Actual local spawn-process actors, explicit trusted factories/method allowlists, FIFO mailboxes, bounded pending calls, asynchronous handles, serialized objects, crash detection and joined shutdown | Multi-node actor placement, named/shared actor ownership, actor-to-actor transport, async/threaded actor policy, checkpointed recovery and integration with DAG resource admission |
@@ -201,3 +201,47 @@ markers. No other parameter or second full suite was rerun. Final Ruff lint and
 format checks, strict Mypy (22 source files), Bandit, frozen-lock consistency and
 `git diff --check` passed. Full-suite coverage acceptance and final-source Linux
 verification remain pending rather than inheriting earlier increments' results.
+
+### Subsequent hosted resolution of the process-DAG gate
+
+After that local diagnostic, exact signed commit
+`bee95a984ce9a145ad460d40e8f7d30fee8df5f5` passed hosted CI run `34183785450`
+and CodeQL `34183785460`, observed 2026-09-08 UTC. Linux Python 3.11–3.14 and
+Windows 3.12 all passed. Actual Python 3.12 job logs show 672 passes without skips
+on each OS (43.09 seconds Linux / 51.16 seconds Windows), rounded combined
+coverage 97%, with the unchanged 95% gate. PR 7 was then made Ready. This is
+fresh-host acceptance of that commit, not a retrospective explanation of the
+unknown local failure markers. Earlier diagnostic histories remain above.
+
+## Owned execution and selective-result increment
+
+The same frozen task documentation was read again for nonblocking submission,
+dependency-result handles, selected waits and cancellation. Original
+`src/graph_sail/handles.py` adds local ownership over the existing scheduler,
+with one bounded terminal observer; process admission/cleanup is shared with
+the blocking API rather than reimplemented. [The contract](execution-handles.md)
+distinguishes terminal status, whole-backend settlement, actual controller join,
+borrowed result values and the absence of per-node cancellation.
+
+Event-controlled tests prove that one dependent's result is readable while an
+unrelated branch remains blocked. They cover non-consuming ordered waits,
+wait-only timeouts, retries, failure/skip/cancellation status, multiple waiters,
+ordinary/control exception priority, failed starts, explicit close ownership and
+actual spawned workers whose PIDs and exit status are checked after cancellation.
+An independent read-only public-API probe additionally verified partial results,
+late successful thread values under cancellation and absence of leaked owned
+threads. No deployment, distributed scale or whole-reference completion follows.
+
+All cross-node services, nested/generator/multiple-return task semantics,
+distributed resource/object ownership, recovery, Data/Train/Tune/Serve/RLlib and
+their integration/workload surfaces remain open. Final-source verification for
+this new handle increment is recorded separately from its parent below.
+
+Windows Python 3.12.13 passed all 49 focused handle cases in 40.72 seconds,
+including four real-process cases, with RuntimeWarning/ResourceWarning treated
+as errors. The new handle module reached 100% branch-aware coverage (187
+statements, 44 branches). An earlier combined handle/shared-scheduler check
+passed 78 cases. The last edit only flattened a lint-equivalent test context;
+its single targeted case was rerun. These focused results do not stand in for
+a full-repository run. Final static/package and hosted whole-suite evidence
+must be checked independently before this increment is Ready.

@@ -435,6 +435,15 @@ def execute_process_graph(
     tasks, assigned, memory, options = _prepare_execution(
         graph, registry, placements, config, cancel_event
     )
+    invoker = _prepare_process_invoker(tasks, options, process_config)
+    runner = _Runner(graph, tasks, assigned, memory, options, cancel_event, invocation=invoker)
+    return _run_process_runner(runner, invoker, began)
+
+
+def _prepare_process_invoker(
+    tasks: TaskRegistry, options: ExecutionConfig, process_config: ProcessTaskConfig | None
+) -> _ProcessInvoker:
+    """Preflight only: no child, pipe or driver starts during registration checks."""
     if process_config is None:
         process_config = ProcessTaskConfig()
     if not isinstance(process_config, ProcessTaskConfig):
@@ -453,11 +462,15 @@ def execute_process_graph(
     for node in tasks.tasks:
         # No worker starts if even a single registered callable is unpicklable.
         _pack(tasks.definition(node), process_config.max_message_bytes)
-    invoker = _ProcessInvoker(process_config)
+    return _ProcessInvoker(process_config)
+
+
+def _run_process_runner(
+    runner: _Runner, invoker: _ProcessInvoker, began: float
+) -> ProcessExecutionResult:
+    """Shared blocking/handle cleanup; results are published only after worker joins."""
     try:
-        result = _Runner(
-            graph, tasks, assigned, memory, options, cancel_event, invocation=invoker
-        ).run()
+        result = runner.run()
     except BaseException as error:
         try:
             invoker.close()

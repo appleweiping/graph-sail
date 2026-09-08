@@ -383,6 +383,7 @@ class _Runner:
         external: Event | None,
         *,
         invocation: _Invocation | None = None,
+        terminal_observer: Callable[[TaskExecution, object], None] | None = None,
     ) -> None:
         self.graph, self.registry, self.assigned, self.memory, self.config = (
             graph,
@@ -411,6 +412,7 @@ class _Runner:
         self.stop_reason: str | None = None
         self.epoch = time.monotonic()
         self.invocation = _invoke if invocation is None else invocation
+        self.terminal_observer = terminal_observer
 
     def run(self) -> ExecutionResult:
         pool = ThreadPoolExecutor(
@@ -561,6 +563,8 @@ class _Runner:
         self.completed[node] = TaskExecution(
             node, self.assigned[node], status, tuple(self.attempts[node]), reason
         )
+        if self.terminal_observer is not None:
+            self.terminal_observer(self.completed[node], self.outputs.get(node))
 
 
 def _name(value: object, label: str) -> None:
