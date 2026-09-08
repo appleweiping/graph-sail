@@ -6,6 +6,10 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Event-driven asyncio result/selected-terminal methods for actor, execution and
+  node handles, with shared waiter bounds, removable subscriptions, wait-only
+  cancellation, cross-loop notifications and fresh source-exception wrappers.
+- Offline async actor/DAG example and lifecycle, capacity and publication-race tests.
 - Nonblocking thread/process DAG handles, selective terminal-node waits, borrowed
   result access and explicit cancellation/close ownership over the shared scheduler.
 - Event-controlled partial-result example and thread/process lifecycle regressions.

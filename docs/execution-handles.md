@@ -23,6 +23,11 @@ before releasing the unrelated task. No model, service, GPU or network is needed
 For processes, executable application modules need the usual
 `if __name__ == "__main__":` startup guard; see [process execution](process-execution.md).
 
+For event-loop applications, [bounded async result methods](async-results.md)
+observe these same sources without one waiting thread per coroutine. Their
+wait-only cancellation and fresh source-failure wrappers are explicit; startup
+and owner closing remain synchronous.
+
 ## State and result contract
 
 - `nodes` is the admitted graph's deterministic topological tuple of IDs.
@@ -100,11 +105,12 @@ terminal record/value binding per node plus the existing final result. It does
 not copy an entire graph snapshot on each completion. A selected wait scans its
 bounded selection when awakened, and notification wakes current waiters; this
 is not a distributed or constant-cost subscription service. Returned arbitrary
-Python object sizes and the number of application-created handles/waiters are
-not bounded by a new memory quota. Existing process message and worker limits
+Python object sizes and the number of application-created handles/synchronous
+waiters are not bounded by a new memory quota. Async methods separately bound
+their per-source subscriptions and pending loop slots. Existing message/worker limits
 still apply; no throughput claim is inferred from correctness tests.
 
-Cross-node scheduling, durable recovery, public per-node cancellation, task
-generators/multiple returns, nested task submission and `asyncio` adapters remain
-open contracts. This increment adds local asynchronous ownership and partial
-results; it does not establish entire-reference parity.
+Cross-node scheduling, durable recovery, public per-node cancellation, process
+and distributed task generators, multiple returns and nested task submission
+remain open. Local native thread [task streams](task-streams.md) and bounded
+`asyncio` observations are separate implemented subsets, not complete reference parity.
