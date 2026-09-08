@@ -69,6 +69,9 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Owned nonblocking thread/process execution handles with selective node results,
   explicit whole-graph cancellation and joined lifecycle; see
   [execution handles](docs/execution-handles.md) and the runnable offline example.
+- Fractional and custom [logical task resources](docs/logical-resources.md), with
+  exact 0.0001-unit admission, all-or-none named demands, feasible-ready backfill
+  and joined per-attempt accounting across both execution backends.
 
 ## Run registered local functions
 
