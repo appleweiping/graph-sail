@@ -73,6 +73,14 @@ from graph_sail.process_execution import (
 )
 from graph_sail.resources import UNITS_PER_RESOURCE, LogicalResources, ResourceUsage
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
+from graph_sail.task_streams import (
+    TaskStream,
+    TaskStreamConfig,
+    TaskStreamContext,
+    TaskStreamItem,
+    TaskStreamResult,
+    start_task_stream,
+)
 
 __all__ = [
     "UNITS_PER_RESOURCE",
@@ -137,6 +145,11 @@ __all__ = [
     "TaskExecution",
     "TaskNotSuccessful",
     "TaskRegistry",
+    "TaskStream",
+    "TaskStreamConfig",
+    "TaskStreamContext",
+    "TaskStreamItem",
+    "TaskStreamResult",
     "ValidationError",
     "WaitResult",
     "benchmark_graph",
@@ -152,6 +165,7 @@ __all__ = [
     "simulate_plan",
     "start_graph",
     "start_process_graph",
+    "start_task_stream",
 ]
 
 __version__ = "0.5.0"
