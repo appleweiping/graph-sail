@@ -528,10 +528,21 @@ def test_failure_resource_release_preserves_fail_fast_semantics(fail_fast):
 
 
 def test_timeout_keeps_live_allocation_until_callable_observes_stop(monkeypatch):
+    from types import SimpleNamespace
+
+    import graph_sail.execution as execution
+
     captured = recording_pool(monkeypatch)
-    observed, release = Event(), Event()
+    entered, observed, release = Event(), Event(), Event()
+    # Advance only the scheduler's clock after actual callable entry. A real
+    # 50 ms deadline can expire before admission on a busy host, legitimately
+    # skipping this callback and never exercising the live-lease assertion.
+    monkeypatch.setattr(
+        execution, "time", SimpleNamespace(monotonic=lambda: 101.0 if entered.is_set() else 100.0)
+    )
 
     def task(context):
+        entered.set()
         while not context.cancellation.cancelled:
             release.wait(0.001)
         observed.set()
@@ -556,6 +567,31 @@ def test_timeout_keeps_live_allocation_until_callable_observes_stop(monkeypatch)
     finally:
         release.set()
         handle.close(10)
+
+
+def test_timeout_before_admission_never_invokes_or_reserves(monkeypatch):
+    from types import SimpleNamespace
+
+    import graph_sail.execution as execution
+
+    captured = recording_pool(monkeypatch)
+    expired, invoked = Event(), Event()
+
+    class DelayedPool(ThreadPoolExecutor):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            expired.set()
+
+    monkeypatch.setattr(execution, "ThreadPoolExecutor", DelayedPool)
+    monkeypatch.setattr(
+        execution, "time", SimpleNamespace(monotonic=lambda: 101.0 if expired.is_set() else 100.0)
+    )
+    result = run({"a": lambda _: invoked.set()}, options({"a": {"CPU": 1}}, timeout_seconds=0.05))
+    assert not invoked.is_set()
+    assert result.cancellation_reason == "timeout"
+    assert result.tasks[0].status == "cancelled"
+    assert result.resource_usage == captured[0].snapshot()
+    assert result.resource_usage.reservations == result.resource_usage.releases == 0
 
 
 def test_offline_resource_example_executes_real_graph(capsys):

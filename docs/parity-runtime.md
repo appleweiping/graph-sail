@@ -298,3 +298,44 @@ installed bytes and ran the actual fractional-concurrency example to result 42,
 with three reservations/releases and exact integer peaks. Package identity is
 rechecked after this documentation-only evidence update. These are local gates;
 hosted CI/CodeQL and protected human review are not implied by them.
+
+## Increment: bounded generator task streams
+
+The separate local stream API executes a native generator on an owned thread,
+publishes ordered partial results, and waits for mailbox capacity before the
+next generator advancement. It has explicit cooperative cancellation, no-peek
+yield limits, generator cleanup and joined lifecycle. Reading failures resets
+the original traceback so repeated observers do not accumulate reader frames.
+See [the contract](task-streams.md) and [the example](../examples/task_stream.py).
+
+The frozen reference's
+[generator task guide](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/ray-generator.rst)
+was read for public capability scope, not copied as an implementation. Our
+explicitly bounded producer differs from its eager distributed object-reference
+execution. This increment does not close process/actor streams, dynamic DAG
+per-yield edges, distributed reference lifetime, async consumers, replay/retry
+or the larger Data/Train/Tune/Serve/RLlib surfaces. The whole-reference goal stays
+open. Verification evidence will be recorded only after final source gates.
+
+Final Windows Python **3.12.13** verification passed **907 tests** with three
+existing symlink-privilege skips in **1023.89 s**. JUnit confirms 910 cases,
+zero errors/failures. Combined coverage is **96.6271%** (4341/4458 statements,
+1360/1442 branches), retaining the original 95% gate; the new stream module
+has **100%** statement/branch coverage. RuntimeWarning and ResourceWarning
+were promoted to errors. All 71 stream cases separately passed on Python
+3.12.13 and 3.14.5; independent review checked actual producer backpressure,
+cleanup and 500 failure observations without traceback growth.
+
+The first full run had one failure in an existing live-resource timeout test:
+its 50ms real deadline could expire before callable admission on a busy host.
+The final test advances only the scheduler clock after actual callback entry,
+and a separate test confirms pre-admission expiry invokes/reserves nothing.
+The failed run is not acceptance. The updated resource/stream focused group
+passed 104 cases before the successful fresh full run. No production scheduler
+deadline behavior was changed to satisfy that test.
+
+Ruff lint/format (75 files), strict Mypy (25 modules), Bandit, frozen 61-package
+lock and whitespace gates pass. The wheel/sdist and fresh offline isolated
+installation previously matched all 26 package files and ran the actual
+event-synchronized stream example; final artifacts are rechecked after this
+evidence-only documentation and test update. Hosted checks remain separate.
