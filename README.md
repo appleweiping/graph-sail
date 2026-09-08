@@ -62,6 +62,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
   dependency return values, bounded per-device concurrency and measured timings.
 - Local spawn-process actors with persistent state, an explicit method allowlist,
   bounded FIFO mailboxes, asynchronous result handles and supervised shutdown.
+- Context-owned local immutable byte objects with strict transferable references,
+  independent read limits, content verification and explicit release/cleanup.
 
 ## Run registered local functions
 
@@ -81,6 +83,12 @@ For isolated stateful workers, run `python examples/process_actor.py`. The
 [process actor API](docs/process-actors.md) uses trusted module-level factories,
 serializes arguments/results and owns the child process lifecycle. This is a
 local API, not a distributed cluster runtime or security sandbox.
+
+For large byte inputs reused by tasks or actors, run `python examples/local_objects.py`.
+The [local object API](docs/local-object-storage.md) reads a generated 2 MiB object
+inside a real actor while passing only its small reference through a 4 KiB
+message boundary. Readers return verified byte copies; this is not zero-copy
+transport or distributed reference counting.
 
 ## Installation
 
