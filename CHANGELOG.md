@@ -6,6 +6,9 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Nonblocking thread/process DAG handles, selective terminal-node waits, borrowed
+  result access and explicit cancellation/close ownership over the shared scheduler.
+- Event-controlled partial-result example and thread/process lifecycle regressions.
 - Trusted local callable execution over validated DAGs with real dependency return
   values, global/per-device concurrency admission and measured attempt telemetry.
 - Bounded application retries with exception filters, independent-branch failure

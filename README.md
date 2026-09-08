@@ -66,6 +66,9 @@ self-contained and loads no remote scripts, fonts, or analytics.
   independent read limits, content verification and explicit release/cleanup.
 - Process-backed DAG tasks reuse the same scheduler with actual child dependency
   values, application retries, native cooperative cancellation and joined retirement.
+- Owned nonblocking thread/process execution handles with selective node results,
+  explicit whole-graph cancellation and joined lifecycle; see
+  [execution handles](docs/execution-handles.md) and the runnable offline example.
 
 ## Run registered local functions
 

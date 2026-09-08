@@ -40,6 +40,14 @@ from graph_sail.execution import (
     TaskRegistry,
     execute_graph,
 )
+from graph_sail.handles import (
+    ExecutionHandle,
+    NodeHandle,
+    TaskNotSuccessful,
+    WaitResult,
+    start_graph,
+    start_process_graph,
+)
 from graph_sail.io import graph_from_dict, load_graph
 from graph_sail.models import GraphSpec, PlanResult
 from graph_sail.objects import (
@@ -86,6 +94,7 @@ __all__ = [
     "CancellationToken",
     "ExactPlanner",
     "ExecutionConfig",
+    "ExecutionHandle",
     "ExecutionResult",
     "GraphSailError",
     "GraphSpec",
@@ -93,6 +102,7 @@ __all__ = [
     "LatencyObservation",
     "LocalObjectClient",
     "LocalObjectStore",
+    "NodeHandle",
     "ObjectCapacityError",
     "ObjectIntegrityError",
     "ObjectRef",
@@ -121,8 +131,10 @@ __all__ = [
     "TaskContext",
     "TaskDefinition",
     "TaskExecution",
+    "TaskNotSuccessful",
     "TaskRegistry",
     "ValidationError",
+    "WaitResult",
     "benchmark_graph",
     "calibrate_graph",
     "execute_graph",
@@ -134,6 +146,8 @@ __all__ = [
     "pareto_plans",
     "plan_cost",
     "simulate_plan",
+    "start_graph",
+    "start_process_graph",
 ]
 
 __version__ = "0.5.0"
