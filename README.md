@@ -48,6 +48,10 @@ self-contained and loads no remote scripts, fonts, or analytics.
   later work is still running, with pre-pull backpressure, explicit yield limits,
   cooperative cancellation and owned thread cleanup; see [task streams](docs/task-streams.md)
   and the [runnable example](examples/task_stream.py).
+- Genuine local process-backed generator streams reuse that mailbox, with one
+  backpressured `next()` RPC, bounded complete frames, ordered snapshots and
+  independently observed native cleanup; see [process streams](docs/process-task-streams.md)
+  and the [offline example](examples/process_task_streams.py).
 - Strict, typo-resistant JSON input contract.
 - Image, audio, language, decoder, post-processing, or custom node kinds.
 - Per-device latency estimates, persistent memory budgets, allowlists, and pinned nodes.

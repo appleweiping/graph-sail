@@ -18,7 +18,7 @@ standard-library spawn and pipe lifecycle documentation informed its OS boundary
 
 | Reference subsystem and pinned source | Current Graph Sail evidence | Remaining contracts |
 | --- | --- | --- |
-| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles, selective node results, bounded native thread-generator streams and event-loop result/wait methods | Cross-node workers, per-task cancellation, nested tasks, process/distributed generators, multiple returns and dashboard event delivery |
+| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles, selective node results, bounded native thread/process-generator streams and event-loop result/wait methods | Cross-node workers, per-task cancellation, nested tasks, distributed generators, per-yield DAG edges, multiple returns and dashboard event delivery |
 | [Resource scheduling](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/scheduling/resources.rst): logical CPU/GPU/custom resources and capacities | Per-device logical slots, global thread limit, persistent-memory admission, node compatibility, exact fractional/custom logical task demands with all-or-none admission and joined accounting on both local backends | Locality-aware placement, GPU visibility control, placement groups, cluster capacity and autoscaling; logical resource admission does not acquire hardware |
 | [Task fault tolerance](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/fault_tolerance/tasks.rst): application exception policies, worker failure retries, cancellation and object reconstruction | Bounded application retries with original child exception filtering; local crash detection, joined replacement for independent work, irreversible cooperative EOF cancellation and noncooperative termination | Automatic crash replay with explicit side-effect policy, machine failure recovery, lost-object reconstruction, durable lineage and distributed cancellation |
 | [Actors](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/actors.rst): stateful remote workers, handles, methods and concurrency models | Actual local spawn-process actors, explicit trusted factories/method allowlists, FIFO mailboxes, bounded pending calls, asynchronous handles, serialized objects, crash detection and joined shutdown | Multi-node actor placement, named/shared actor ownership, actor-to-actor transport, async/threaded actor policy, checkpointed recovery and integration with DAG resource admission |
@@ -399,3 +399,55 @@ explicitly joined owners. All 27 runtime package files match source, wheel and
 isolated installation byte-for-byte; package metadata matches, and all 13
 increment files match the sdist. Final packages are rechecked after this
 documentation-only evidence update. Hosted CI/CodeQL results remain separate.
+
+## Local process generator-stream increment
+
+The same frozen reference's
+[native generator contract](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/ray-generator.rst)
+and [object contract](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/objects.rst)
+were read before implementing this lane. The implementation is original and
+reuses Graph Sail's existing mailbox and actor protocol rather than copying a
+reference implementation or calling a list-returning task a stream.
+
+`process_task_streams.py` now retains a real native generator in one local
+spawned worker. Each bounded RPC advances once, only after mailbox capacity is
+available. Complete-frame bounds, independently serialized yields, half-closed
+pipe cancellation, accepted-prefix failure ordering, exact-cap no-peek behavior,
+worker PID/exit observation, close acknowledgement, and separately retained
+native resource cleanup are explicit in [its contract](process-task-streams.md).
+
+This is not the reference's distributed object-reference/GC and reconstruction
+model, eager execution policy, async iterator, actor-method streaming or dynamic
+per-yield graph scheduling. Cross-host services, distributed failure recovery,
+language/API breadth, Serve/Data/Train/Tune/RLlib and workload-scale equivalence
+remain open. Local correctness and lifecycle tests do not measure a distributed
+speedup or establish whole-repository quality/scale parity.
+
+Final-source Windows Python **3.12.13** validation passed **1140 tests** with
+three existing symlink-privilege skips in **1134.50 seconds**. JUnit records 1143
+cases, zero failures/errors and 1134.108 seconds. RuntimeWarning and
+ResourceWarning were errors. An absolute, dedicated coverage prefix captured
+parent and native child data: **97.7460%** combined coverage (5051/5132 statements,
+1584/1656 branches), retaining the original 95% gate. The new process-stream
+module covers all 308 statements and 82 branches; the unchanged shared mailbox
+covers all 222 statements and 52 branches. All 142 new cases are included:
+124 internal/protocol cases and 18 real-process cases, which create 19 actor
+workers plus two actual communication owners. The latter are actual spawned
+process counts, not a claim that each internal test launched a worker.
+
+Missing-API RED tests, a real cancellation response race, and two distinct
+startup-resource ownership defects were captured and fixed before the final
+run. Fixture/import, pipe-type annotation and documentation-format corrections
+are documented separately in the [process-stream contract](process-task-streams.md).
+No production timeout, coverage gate or existing skip condition was relaxed.
+
+Ruff lint and format (87 files), strict Mypy (27 source modules), Bandit, the
+frozen 61-package lock and whitespace checks pass. The sdist-to-wheel build,
+strict Twine and wheel-content checks pass. A fresh offline wheel-only
+environment ran the executable example with `python -I`, independently checking
+squares `[0, 1, 4, 9]`, an actual child PID, `limited` completion, its fixture's
+`finally` marker and closed native resources. All 28 runtime files match source,
+wheel and isolated installation byte-for-byte; metadata matches, and all 11
+increment files match the sdist. Artifacts are rechecked after this
+documentation-only evidence update. Hosted multi-platform CI/CodeQL results are
+separate and are not claimed by these local results.
