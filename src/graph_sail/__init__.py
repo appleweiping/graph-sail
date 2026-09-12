@@ -78,6 +78,13 @@ from graph_sail.process_execution import (
     ProcessWorker,
     execute_process_graph,
 )
+from graph_sail.process_task_streams import (
+    ProcessStreamConfig,
+    ProcessStreamResult,
+    ProcessStreamWorker,
+    ProcessTaskStream,
+    start_process_task_stream,
+)
 from graph_sail.resources import UNITS_PER_RESOURCE, LogicalResources, ResourceUsage
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
 from graph_sail.task_streams import (
@@ -143,7 +150,11 @@ __all__ = [
     "ProcessActor",
     "ProcessAttempt",
     "ProcessExecutionResult",
+    "ProcessStreamConfig",
+    "ProcessStreamResult",
+    "ProcessStreamWorker",
     "ProcessTaskConfig",
+    "ProcessTaskStream",
     "ProcessTaskTimeout",
     "ProcessWorker",
     "ResourceUsage",
@@ -177,6 +188,7 @@ __all__ = [
     "simulate_plan",
     "start_graph",
     "start_process_graph",
+    "start_process_task_stream",
     "start_task_stream",
 ]
 

@@ -6,6 +6,11 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Local process-backed native-generator task streams on the existing bounded
+  mailbox and process actor transport, with full-frame limits, irreversible EOF
+  cancellation, prefix-before-failure ordering and explicit native cleanup state.
+- Offline process-stream example and real spawn, backpressure, communication-owner
+  death, cleanup failure and retained-startup-ownership regression tests.
 - Event-driven asyncio result/selected-terminal methods for actor, execution and
   node handles, with shared waiter bounds, removable subscriptions, wait-only
   cancellation, cross-loop notifications and fresh source-exception wrappers.

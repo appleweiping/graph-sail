@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
 from multiprocessing.connection import Connection, wait
-from threading import Condition, Event, Thread, current_thread
+from threading import Condition, Event, Lock, Thread, current_thread
 from types import MappingProxyType
 from typing import Protocol
 
@@ -71,6 +71,92 @@ class _CancellationConnection(Protocol):
     def close(self) -> None: ...
 
     def poll(self, timeout: float = 0.0) -> bool: ...
+
+
+class _StreamStartupCleanup:
+    """Retained failed-start ownership, exposed on the original stream error.
+
+    This is deliberately not a factory or an actor lifecycle extension. Only
+    acquired resources from the internal stream bootstrap are admitted here.
+    """
+
+    def __init__(self, actor: ProcessActor, endpoints: tuple[_CancellationConnection, ...]) -> None:
+        self._actor = actor
+        self._endpoints = endpoints
+        self._endpoints_closed = [False] * len(endpoints)
+        self._actor_closed = False
+        self._child_endpoint: _CancellationConnection | None = None
+        self._child_closed = False
+        self._lock = Lock()
+        self._cleanup_lock = Lock()
+
+    @property
+    def closed(self) -> bool:
+        with self._lock:
+            return (
+                self._actor_closed
+                and all(self._endpoints_closed)
+                and (self._child_endpoint is None or self._child_closed)
+            )
+
+    def close(self) -> None:
+        """Retry acquired-resource cleanup; failure retains this same owner."""
+        with self._cleanup_lock:
+            problem: BaseException | None = None
+            for index, endpoint in enumerate(self._endpoints):
+                if not self._endpoints_closed[index]:
+                    try:
+                        endpoint.close()
+                        with self._lock:
+                            self._endpoints_closed[index] = True
+                    except BaseException as error:
+                        problem = error if problem is None else _preserve_failure(problem, error)
+            if self._child_endpoint is not None and not self._child_closed:
+                try:
+                    self._child_endpoint.close()
+                    with self._lock:
+                        self._child_closed = True
+                except BaseException as cleanup:
+                    problem = cleanup if problem is None else _preserve_failure(problem, cleanup)
+            try:
+                if not self._actor_closed:
+                    self._close_actor()
+                    with self._lock:
+                        self._actor_closed = True
+            except BaseException as cleanup:
+                problem = cleanup if problem is None else _preserve_failure(problem, cleanup)
+            if problem is not None:
+                raise problem
+
+    def _close_actor(self) -> None:
+        actor = self._actor
+        broker = getattr(actor, "_thread", None)
+        if broker is not None and broker.ident is not None:
+            # Includes an initializer wrapper that raised *after* starting the
+            # actual broker. Never reap concurrently with that broker.
+            actor.terminate()
+        elif hasattr(actor, "_process") and not actor._process_closed:
+            # No broker ever started: this owner may retry partial bootstrap
+            # cleanup. Clear only its old diagnostic, not resource identities.
+            actor._cleanup_error = None
+            actor._cleanup_process(graceful=False)
+            if actor._cleanup_error is not None:
+                raise actor._cleanup_error
+        elif hasattr(actor, "_connection"):
+            # Process construction may fail after allocating the actor pipe,
+            # or earlier cleanup may have closed the process handle already.
+            actor._connection.close()
+
+    def retain(self, primary: BaseException) -> BaseException:
+        """Attempt all resources, attaching retry ownership without hiding control."""
+        try:
+            self.close()
+        except BaseException as cleanup:
+            primary = _preserve_failure(primary, cleanup)
+        # These are trusted local exceptions, not a user-facing wire document.
+        # Preserve the original KeyboardInterrupt/SystemExit object and type.
+        primary.process_stream_cleanup = self  # type: ignore[attr-defined]
+        return primary
 
 
 def _preserve_failure(primary: BaseException, secondary: BaseException) -> BaseException:
@@ -261,6 +347,8 @@ def _worker(
     task_cancellation: _CancellationConnection | None = None,
 ) -> None:
     """Top-level spawn target; registered methods execute sequentially here."""
+    stream_shutdown: Callable[[], object] | None = None
+    problem: BaseException | None = None
     try:
         try:
             factory, names, args, kwargs = _startup_fields(_unpack(startup))
@@ -270,10 +358,20 @@ def _worker(
                 # An OS handle is passed only by the internal task bootstrap,
                 # never through the serialized actor request/startup protocol.
                 from graph_sail.process_execution import _TaskWorker
+                from graph_sail.process_task_streams import _StreamWorker
 
-                if factory is not _TaskWorker or names != ("invoke",) or args or kwargs:
+                if factory is _TaskWorker and names == ("invoke",) and not args and not kwargs:
+                    instance = _TaskWorker(task_cancellation)
+                elif (
+                    factory is _StreamWorker
+                    and names == ("advance", "finish")
+                    and len(args) == 3
+                    and not kwargs
+                ):
+                    instance = _StreamWorker(task_cancellation, *args)
+                    stream_shutdown = instance.finish
+                else:
                     raise TypeError("cancellation bootstrap is restricted to the task worker")
-                instance = _TaskWorker(task_cancellation)
             methods: dict[str, Callable[..., object]] = {}
             for name in names:
                 method = getattr(instance, name)
@@ -302,12 +400,25 @@ def _worker(
     except (EOFError, OSError):
         # Parent close/death makes the private pipe unusable; no replay is safe.
         return
+    except BaseException as error:
+        problem = error
     finally:
-        try:
-            connection.close()
-        finally:
-            if task_cancellation is not None:
-                task_cancellation.close()
+        # Only our exact internal stream worker owns a generator. Ordinary
+        # actor instances do not gain an implicit user-controlled close hook.
+        # Shutdown runs on this same worker thread, never beside next().
+        operations: list[Callable[[], object]] = []
+        if stream_shutdown is not None:
+            operations.append(stream_shutdown)
+        operations.append(connection.close)
+        if task_cancellation is not None:
+            operations.append(task_cancellation.close)
+        for operation in operations:
+            try:
+                operation()
+            except BaseException as cleanup:
+                problem = cleanup if problem is None else _preserve_failure(problem, cleanup)
+        if problem is not None:
+            raise problem
 
 
 class ActorCall:
@@ -446,6 +557,46 @@ class ProcessActor:
             raise
         return actor, sender
 
+    @classmethod
+    def _for_stream_worker(
+        cls,
+        function: object,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+        config: ActorConfig,
+    ) -> tuple[ProcessActor, _CancellationConnection]:
+        """Closed internal generator bootstrap; no public arbitrary factory hook."""
+        from graph_sail.process_task_streams import _StreamWorker
+
+        registry = ActorRegistry(
+            {"stream_worker": ActorDefinition(_StreamWorker, ("advance", "finish"))}
+        )
+        # Admit the entire startup frame before allocating OS handles. The
+        # initializer also serializes it independently at the spawn boundary.
+        _pack(
+            (_StreamWorker, ("advance", "finish"), (function, args, kwargs), {}),
+            config.max_message_bytes,
+        )
+        actor = cls.__new__(cls)
+        receiver, sender = multiprocessing.get_context("spawn").Pipe(duplex=False)
+        ownership = _StreamStartupCleanup(actor, (receiver, sender))
+        try:
+            actor._initialize(
+                registry,
+                "stream_worker",
+                args=(function, args, kwargs),
+                config=config,
+                task_cancellation=receiver,
+                _stream_ownership=ownership,
+            )
+            receiver.close()
+        except BaseException as error:
+            primary = ownership.retain(error)
+            if primary is not error:
+                raise primary from error
+            raise
+        return actor, sender
+
     def _initialize(
         self,
         registry: ActorRegistry,
@@ -455,6 +606,7 @@ class ProcessActor:
         kwargs: Mapping[str, object] | None = None,
         config: ActorConfig | None = None,
         task_cancellation: _CancellationConnection | None = None,
+        _stream_ownership: _StreamStartupCleanup | None = None,
     ) -> None:
         if not isinstance(registry, ActorRegistry):
             raise ValidationError("registry must be an ActorRegistry")
@@ -495,6 +647,10 @@ class ProcessActor:
         self._cleanup_error: ActorDiedError | None = None
         context = multiprocessing.get_context("spawn")
         self._connection, child = context.Pipe()
+        if _stream_ownership is not None:
+            # The stream owner must retain this otherwise-local endpoint even
+            # when Process construction fails before the ordinary startup try.
+            _stream_ownership._child_endpoint = child
         self._process = context.Process(
             target=_worker,
             args=(child, startup, config.max_message_bytes)
@@ -506,12 +662,23 @@ class ProcessActor:
         try:
             self._process.start()
             child.close()
+            if _stream_ownership is not None:
+                _stream_ownership._child_closed = True
             self._pid = self._process.pid
             reply = self._receive(time.monotonic() + config.startup_timeout_seconds)
             kind, value = self._reply(reply, 0)
             if kind != "ready":
                 raise ActorStartupError(str(self._remote_error(value)))
         except BaseException as error:
+            if _stream_ownership is not None:
+                # Its outer owner has both actor-pipe ends plus cancellation
+                # endpoints. Preserve the original control exception and let
+                # that owner attempt all resources exactly at one boundary.
+                if isinstance(error, Exception) and not isinstance(error, ActorError):
+                    raise ActorStartupError(
+                        f"actor startup failed: {type(error).__name__}"
+                    ) from error
+                raise
             try:
                 child.close()
             finally:
@@ -525,6 +692,8 @@ class ProcessActor:
         try:
             self._thread.start()
         except BaseException as error:
+            if _stream_ownership is not None:
+                raise
             self._cleanup_process(graceful=False)
             if self._cleanup_error is not None:
                 raise self._cleanup_error from error
