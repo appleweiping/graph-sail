@@ -156,8 +156,9 @@ No hard total wall-clock/process-sandbox or descendant-process guarantee is made
 
 ## Scope and verification
 
-This is a local standalone task stream, not actor-method streaming, an async
-iterator, per-yield DAG scheduling, cross-host object storage/GC, fault
+Both backends support [event-driven async consumption](async-streams.md).
+This is still a local standalone task stream, not actor-method streaming, native
+async-generator execution, per-yield DAG scheduling, cross-host object storage/GC, fault
 reconstruction, retries, or a distributed Ray-compatible runtime. Frozen
 reference capability comparison remains in [the parity matrix](parity-runtime.md).
 

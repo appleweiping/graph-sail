@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import time
 from collections import deque
@@ -11,12 +12,14 @@ from threading import Condition, Event, Thread, current_thread
 from types import TracebackType
 from typing import Literal, cast
 
+from graph_sail._completion import _await_snapshot, _CompletionHub, _Snapshot
 from graph_sail.actors import _preserve_failure
 from graph_sail.errors import ValidationError
 from graph_sail.execution import CancellationSignal, CancellationToken, TaskCancelled, _count
 from graph_sail.handles import _timeout
 
 StreamStatus = Literal["succeeded", "limited", "cancelled"]
+_STREAM_EOF = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +78,7 @@ class TaskStream(Iterator[TaskStreamItem]):
 
     def __init__(self, function: StreamCallable, config: TaskStreamConfig) -> None:
         self._condition = Condition()
+        self._completion_hub = _CompletionHub()
         self._stop = Event()
         self._config = config
         self._queue: deque[TaskStreamItem] = deque()
@@ -97,6 +101,72 @@ class TaskStream(Iterator[TaskStreamItem]):
 
     def __next__(self) -> TaskStreamItem:
         return self.next()
+
+    def __aiter__(self) -> TaskStream:
+        return self
+
+    async def __anext__(self) -> TaskStreamItem:
+        return await self.next_async()
+
+    def _next_snapshot(self) -> _Snapshot:
+        # Notification does not reserve an item. Only the resumed coroutine
+        # executes this dequeue, with no suspension before it returns the item.
+        with self._condition:
+            if self._discard:
+                return _Snapshot(True, _STREAM_EOF)
+            if self._queue:
+                # Allocate the observation before committing a consuming read.
+                observed = _Snapshot(True, self._queue[0])
+                self._queue.popleft()
+                self._condition.notify_all()
+                return observed
+            if self._finished:
+                return _Snapshot(True, _STREAM_EOF, failure=self._error)
+            return _Snapshot(False)
+
+    async def next_async(self, timeout: float | None = None) -> TaskStreamItem:
+        """Compete for one item without blocking the loop or taking producer ownership."""
+        _timeout(timeout)
+        self._not_producer()
+        # Deliver an already-requested task cancellation before any destructive
+        # read, even when the mailbox is immediately ready. This single checkpoint
+        # is not polling and does not reject a previously caught cancellation.
+        await asyncio.sleep(0)
+        value = await _await_snapshot(self._completion_hub, self._next_snapshot, timeout)
+        if value is _STREAM_EOF:
+            raise StopAsyncIteration
+        return cast(TaskStreamItem, value)
+
+    def _ready_snapshot(self) -> _Snapshot:
+        with self._condition:
+            ready = bool(self._queue) or self._finished or self._discard
+            return _Snapshot(ready, ready)
+
+    async def wait_ready_async(self, timeout: float | None = None) -> bool:
+        """Nonconsuming readiness; another reader may consume before this waiter resumes."""
+        _timeout(timeout)
+        self._not_producer()
+        return cast(
+            bool,
+            await _await_snapshot(
+                self._completion_hub, self._ready_snapshot, timeout, partial=True
+            ),
+        )
+
+    def _completion_snapshot(self) -> _Snapshot:
+        with self._condition:
+            if self._finished and self._error is None and self._result is None:
+                raise RuntimeError("finished stream has no result")
+            return _Snapshot(self._finished, self._result, failure=self._error)
+
+    async def completion_async(self, timeout: float | None = None) -> TaskStreamResult:
+        """Await settled execution/cleanup without draining, cancelling or closing."""
+        _timeout(timeout)
+        self._not_producer()
+        return cast(
+            TaskStreamResult,
+            await _await_snapshot(self._completion_hub, self._completion_snapshot, timeout),
+        )
 
     def next(self, timeout: float | None = None) -> TaskStreamItem:
         """Consume an item or observe terminal failure/EOF; timeout never cancels."""
@@ -167,9 +237,12 @@ class TaskStream(Iterator[TaskStreamItem]):
         replacement: deque[TaskStreamItem] = deque()
         with self._condition:
             abandoned, self._queue = self._queue, replacement
+            first_discard = not self._discard
             self._discard = True
             self._stop.set()
             self._condition.notify_all()
+        if first_discard:
+            self._completion_hub.notify()
         del abandoned
         self._join(timeout)
 
@@ -245,6 +318,7 @@ class TaskStream(Iterator[TaskStreamItem]):
                 self._queue.append(item)
                 produced += 1
                 self._condition.notify_all()
+            self._completion_hub.notify()
             # Drop this loop's references before waiting for the next free slot.
             del value, item
         else:
@@ -263,6 +337,7 @@ class TaskStream(Iterator[TaskStreamItem]):
             self._error_traceback = problem.__traceback__ if problem is not None else None
             self._finished = True
             self._condition.notify_all()
+        self._completion_hub.notify(terminal=True)
 
     def _run(self, function: StreamCallable) -> TaskStreamResult:
         owned: Generator[object, None, object] | None = None

@@ -451,3 +451,48 @@ wheel and isolated installation byte-for-byte; metadata matches, and all 11
 increment files match the sdist. Artifacts are rechecked after this
 documentation-only evidence update. Hosted multi-platform CI/CodeQL results are
 separate and are not claimed by these local results.
+
+## Event-driven async stream consumption increment
+
+Both existing local stream backends now implement `async for`, `next_async`,
+nonconsuming `wait_ready_async` and non-draining `completion_async` over the same
+consuming mailbox. The existing completion hub supplies bounded, removable,
+cross-loop notifications; no new queue, polling loop, executor or waiter thread
+was added. A single pre-consumption checkpoint delivers pending cancellation
+before any dequeue. Ordinary/control failures have fresh wrappers, accepted
+prefixes retain ordering, and process snapshots/native ownership are unchanged.
+The [complete contract](async-streams.md) states races, budgets and remaining gaps.
+
+Independent review exposed pending self-cancellation taking an immediate item;
+the failing regression was retained before adding the cancellation checkpoint.
+Root fault injection then exposed observation allocation after destructive
+dequeue; observation allocation now precedes dequeue under the same lock.
+Both retained RED cases protect actual ownership/consumption semantics, not
+only method availability. The first ten missing-method failures were also
+observed before implementation. No existing wire, dependency or version changes.
+
+Native async producers, actor-method streaming, per-yield graph scheduling,
+distributed object lifetime/reconstruction, cross-host progress, Serve/Data/
+Train/Tune/RLlib, language/platform integrations and whole-reference scale remain
+open. These local concurrency tests are not distributed throughput evidence.
+Final exact-source full, supported-interpreter and package results are recorded
+after execution; earlier passing runs are not substituted for the final tree.
+
+Final Windows Python **3.12.13** whole-suite verification passed **1,203 tests**,
+with three existing symlink-privilege skips, in **252.14 seconds**. All 113 tracked
+and new delivery files matched their pre-run hashes afterward. RuntimeWarning
+and ResourceWarning were errors. Combined parent/worker coverage is **97.7700%**
+(5,112/5,193 statements and 1,596/1,668 branches), preserving the original 95%
+gate and existing exclusions. The integrated thread-stream module covers all
+272 statements and 64 branches; process-stream wrapper all 319 statements and
+82 branches; reused completion hub all 188 statements and 66 branches.
+
+All **63 new tests** separately passed against the same source on Python
+**3.14.5** in **7.21 seconds**, including genuine spawned-worker cases. That
+secondary run uses an explicit source path, not an installed-artifact claim.
+Its initial attempt lacked the source import path and failed collection; that
+environment failure is retained separately. The final 3.12 full supersedes the
+earlier 1,202-pass run before the allocation fix. Independent reviewers confirmed
+both fixes through their own focused runs. Ruff lint/format (91 Python files),
+strict Mypy (27 runtime modules), Bandit and the unchanged 61-package offline lock
+passed. Package and hosted checks remain separate from these local test results.

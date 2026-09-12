@@ -41,6 +41,9 @@ self-contained and loads no remote scripts, fonts, or analytics.
 
 ## Features
 
+- Event-driven `async for` and explicit async item/readiness/completion waits on
+  both stream backends, sharing one mailbox and preserving producer ownership;
+  see [async streams](docs/async-streams.md) and [offline example](examples/async_task_streams.py).
 - Bounded event-driven `asyncio` result and selected-terminal waits for actor and
   DAG handles, with wait-only cancellation and unchanged explicit owner cleanup;
   see [async results](docs/async-results.md) and [offline example](examples/async_results.py).
