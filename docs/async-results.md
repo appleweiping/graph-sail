@@ -20,7 +20,9 @@ spawn-process actor preserves state across asynchronously awaited calls; a local
 thread DAG publishes a dependency while another branch is blocked. The example
 checks exact expected values and demonstrates cancellation of one waiter without
 stopping the graph. No model, GPU, network, dependency installation, or service
-is needed.
+is needed. The same notification mechanism also supports
+[asynchronous stream consumption](async-streams.md), with a separate single
+cancellation checkpoint before destructive item reads.
 
 ## Methods and values
 
@@ -129,7 +131,7 @@ wait scans its bounded selection on each observation. Source publication epochs
 are naturally bounded by graph terminal publications plus final settlement, or
 one actor terminal state. The implementation does not promise lock-free waits,
 constant-cost graph observation, bounded arbitrary returned object sizes, or
-distributed subscriptions. Process/distributed streaming, async actor method
+distributed subscriptions. Cross-host streaming, async actor method
 execution, cluster scheduling, and complete reference-repository parity remain
 open.
 

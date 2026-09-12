@@ -46,6 +46,8 @@ If a generator violates Python's close protocol (for example, yielding again
 while handling `GeneratorExit`), cleanup is reported as failed; settlement is
 not a claim that arbitrary callback-owned resources were successfully released.
 The producer must not wait on or close its own stream. Native async generators,
-custom/borrowed iterators, actor methods, process streams, dynamic DAG yield
+custom/borrowed iterators, actor methods, dynamic DAG yield
 dependencies, distributed references, replay/retries and network delivery are
-not implemented by this interface.
+not implemented by this interface. A [process-backed wrapper](process-task-streams.md)
+reuses this mailbox; both backends support [event-driven async consumption](async-streams.md)
+without changing native synchronous-generator or explicit-close contracts.

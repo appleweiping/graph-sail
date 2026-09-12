@@ -389,6 +389,22 @@ class ProcessTaskStream(Iterator[TaskStreamItem]):
     def __next__(self) -> TaskStreamItem:
         return self.next()
 
+    def __aiter__(self) -> ProcessTaskStream:
+        return self
+
+    async def __anext__(self) -> TaskStreamItem:
+        return await self.next_async()
+
+    async def next_async(self, timeout: float | None = None) -> TaskStreamItem:
+        return await self._stream.next_async(timeout)
+
+    async def wait_ready_async(self, timeout: float | None = None) -> bool:
+        return await self._stream.wait_ready_async(timeout)
+
+    async def completion_async(self, timeout: float | None = None) -> ProcessStreamResult:
+        result = await self._stream.completion_async(timeout)
+        return ProcessStreamResult(result.status, result.produced, self.worker)
+
     def next(self, timeout: float | None = None) -> TaskStreamItem:
         return self._stream.next(timeout)
 

@@ -6,6 +6,10 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Event-driven async consumption on thread and process task streams, sharing
+  one mailbox, bounded notification lifecycle and wait-only cancellation.
+- Offline two-backend async streaming example and independent lifecycle,
+  deadline/publication/dequeue race, concurrent-consumer and native-worker tests.
 - Local process-backed native-generator task streams on the existing bounded
   mailbox and process actor transport, with full-frame limits, irreversible EOF
   cancellation, prefix-before-failure ordering and explicit native cleanup state.
