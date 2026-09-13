@@ -496,3 +496,48 @@ earlier 1,202-pass run before the allocation fix. Independent reviewers confirme
 both fixes through their own focused runs. Ruff lint/format (91 Python files),
 strict Mypy (27 runtime modules), Bandit and the unchanged 61-package offline lock
 passed. Package and hosted checks remain separate from these local test results.
+
+## Native async producer increment (2026-09-12)
+
+The [native async producer](native-async-task-streams.md) adds real coroutine
+interleaving and pre-advance mailbox backpressure on one explicitly owned lazy
+Task. Existing thread/process engines and completion helper remain unchanged.
+The original focused candidate passed 134 new cases and 89 selected old
+regressions. Independent review added 14 real Selector/Proactor tests and ran
+148 combined cases without failures or skips. These are focused results, not
+full-suite or package acceptance. The offline example now retains its operational
+checks under -O; final exact-source acceptance follows that change separately.
+
+This closes only local native async-generator production. Actor-method streams,
+per-yield graph scheduling, distributed object lifecycle and the entire frozen
+Ray repository remain open. Direct Task creation deliberately bypasses application
+task factories; TaskGroup/child-task transitive ownership and arbitrary hostile
+loop progress are not claimed. Illegal native cleanup is retained, not fabricated
+as closed. A small local lifecycle test cannot substitute for distributed scale.
+
+Final Windows CPython **3.12.13** whole-suite verification passed **1,338 tests**,
+with three genuine symlink-privilege skips, in **338.40 seconds**. All 118 delivery
+files retained their pre-run hashes. RuntimeWarning and ResourceWarning were
+errors. Combined parent/worker coverage was **97.7471%** (5,413/5,499 statements
+and 1,659/1,736 branches), retaining the 95% gate and existing exclusions. The
+initial unsupported pytest-cov command failed argument parsing before tests;
+the accepted run used the repository's coverage-run/multiprocessing-combine path.
+
+Independent Linux CPython **3.12.3** installed-wheel acceptance passed **412 cases**,
+with no skips, in **45.75 seconds**: all 135 new cases, 276 existing thread/process/
+async stream regressions, and one independent actual spawned-worker origin and
+cleanup probe. Native producer coverage was **97.3190%** (300/305 statements and
+63/68 branches), with no exclusions. This is a selected Linux run, not full-suite
+Linux coverage. All 118 source, 29 installed payload and 1,133 environment files
+remained unchanged; loaded modules and the actual spawned child used the dedicated
+wheel installation. Linux used its real Selector loop, not a claimed Proactor run.
+
+A separate dependency-free Windows CPython **3.14.5** wheel installation and the
+independent Linux installation both executed the real example under isolated
+normal and `-O` modes, checking ordered borrowed objects, exact yield cap, awaited
+cleanup and closed ownership. Root's complete package audit matched 29 runtime
+files, four metadata files and 109 source-distribution files. Ruff lint/format,
+strict Mypy, Bandit, the unchanged offline frozen lock, sdist-to-wheel build,
+strict Twine and wheel-content checks passed. Final acceptance prose is the only
+change after those test gates; distributions are rebuilt and re-audited afterwards.
+Hosted results are separate exact-head obligations, not inferred from these runs.

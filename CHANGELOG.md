@@ -6,6 +6,10 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Native async-generator task streams with real await interleaving, bounded
+  mailbox credit, explicit loop-affine ownership, wait-only consumer cancellation
+  and retained ownership on startup or invalid native cleanup. Includes an offline
+  event-gated example and independent real Selector/Proactor lifecycle probes.
 - Event-driven async consumption on thread and process task streams, sharing
   one mailbox, bounded notification lifecycle and wait-only cancellation.
 - Offline two-backend async streaming example and independent lifecycle,

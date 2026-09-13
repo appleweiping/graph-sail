@@ -22,6 +22,12 @@ from graph_sail.actors import (
     ActorTimeoutError,
     ProcessActor,
 )
+from graph_sail.async_task_streams import (
+    AsyncTaskStream,
+    AsyncTaskStreamOwnershipControlError,
+    AsyncTaskStreamOwnershipError,
+    start_async_task_stream,
+)
 from graph_sail.benchmark import BenchmarkResult, PlannerBenchmark, benchmark_graph
 from graph_sail.calibration import (
     CalibrationCell,
@@ -114,6 +120,9 @@ __all__ = [
     "AsyncSourceCancelledError",
     "AsyncSourceControlError",
     "AsyncSourceError",
+    "AsyncTaskStream",
+    "AsyncTaskStreamOwnershipControlError",
+    "AsyncTaskStreamOwnershipError",
     "AsyncWaitLimitError",
     "BeamPlanner",
     "BenchmarkResult",
@@ -186,6 +195,7 @@ __all__ = [
     "pareto_plans",
     "plan_cost",
     "simulate_plan",
+    "start_async_task_stream",
     "start_graph",
     "start_process_graph",
     "start_process_task_stream",

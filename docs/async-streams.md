@@ -131,7 +131,9 @@ or RSS bounded.
 Startup and `close()` remain synchronous. There is no `aclose()` or async context
 manager. Put potentially blocking startup/cleanup outside the loop or provide an
 application-owned lifecycle strategy. A producer must not await its own stream.
-Native async producers, async actor methods, actor-method streaming, per-yield
+Native async producers now have a separate, explicitly owned
+[in-loop producer API](native-async-task-streams.md); they do not change these
+thread/process methods. Async actor methods, actor-method streaming, per-yield
 DAG scheduling, cross-host scheduling/object lifetime/failure reconstruction,
 integrations and whole-reference scale remain open in the
 [whole-repository assessment](parity-runtime.md).

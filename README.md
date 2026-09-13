@@ -41,6 +41,10 @@ self-contained and loads no remote scripts, fonts, or analytics.
 
 ## Features
 
+- Real native async-generator producers on one explicitly owned lazy asyncio Task,
+  with bounded pre-advance credit, one-shot cancellation and awaited native cleanup;
+  see [native async streams](docs/native-async-task-streams.md) and the
+  [offline example](examples/native_async_task_streams.py).
 - Event-driven `async for` and explicit async item/readiness/completion waits on
   both stream backends, sharing one mailbox and preserving producer ownership;
   see [async streams](docs/async-streams.md) and [offline example](examples/async_task_streams.py).
