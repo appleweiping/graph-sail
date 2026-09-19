@@ -1,5 +1,6 @@
 """Importable, dependency-free real-spawn generator fixtures."""
 
+import contextlib
 import os
 import time
 from pathlib import Path
@@ -92,9 +93,14 @@ def abandon_stream_owner(connection, cancellation_sender, marker, blocked):
     if blocked:
         connection.send_bytes(_pack((2, "advance", (1,), {}), 1024))
         deadline = time.monotonic() + 20
-        while not Path(marker).exists() and time.monotonic() < deadline:
+        observed = False
+        while time.monotonic() < deadline:
+            with contextlib.suppress(FileNotFoundError):
+                observed = Path(marker).read_text(encoding="ascii") == "entered"
+            if observed:
+                break
             time.sleep(0.005)
-        assert Path(marker).read_text(encoding="ascii") == "entered"
+        assert observed
     # Not a graceful close: the operating system releases this process's last
     # sender endpoints. No cancellation bytes or generator-close RPC is sent.
     os._exit(0)

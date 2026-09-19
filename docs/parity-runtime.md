@@ -541,3 +541,67 @@ strict Mypy, Bandit, the unchanged offline frozen lock, sdist-to-wheel build,
 strict Twine and wheel-content checks passed. Final acceptance prose is the only
 change after those test gates; distributions are rebuilt and re-audited afterwards.
 Hosted results are separate exact-head obligations, not inferred from these runs.
+
+## Stateful actor-method stream candidate (2026-09-12)
+
+The [actor-method stream contract](actor-method-streams.md) adds native generator
+production on an existing local ProcessActor instance and child thread. It
+reuses the broker, consuming mailbox and completion hub. An opt-in tagged
+profile keeps ordinary wire behavior intact; private advancement credits,
+full-frame sequence accounting and positive close acknowledgement preserve
+actual state across clean streams and subsequent calls.
+
+One exclusive idle-actor lease rejects interleaving/queued stream admission.
+Running cancellation irreversibly retires the actor; reuse after cancellation,
+concurrent/async actor production, cross-host actor ownership, distributed GC,
+reconstruction/restart, per-yield DAG scheduling and Data/Train/Tune/Serve/RLlib
+remain open. The entire fixed Ray repository remains the objective, not this
+local subset. The pinned public contracts and precise gap comparison were read
+in the coordination design; no reference implementation source was copied.
+
+Missing-API REDs precede implementation. Real failure injection retained and
+fixed new-slice signal-control cleanup ordering and lifecycle reentry-before-
+discard defects. Deterministic cancelled-open REDs exposed required broker
+wakeups for the new lease waiter after queued cancellation and terminal pending
+clear. The two approved condition notifications preserve legacy request
+settlement/wire, without a polling workaround. The
+offline example checks stateful totals and cancellation retirement under normal
+and optimized execution. Focused and Windows source whole-suite results are
+recorded below; current-tree packaging, installed-platform and hosted gates
+remain separate. No earlier increment's acceptance is inherited by this candidate.
+
+Independent review additionally retained and fixed startup/shutdown resurrection,
+invalid diagnostic UTF-8 admission and stop-notification bypass of native cleanup.
+Event-controlled real-start ordering, exact control causes, pending settlement
+and actual child/pipe closure are distinct regression obligations.
+An actual overlapping native endpoint-close RED additionally requires one
+parent-only close owner per pipe end. Failed-start control aggregation and two
+finite cleanup attempts retain the same owner when stop/close itself fails.
+
+Independent Windows CPython **3.12.13** whole-suite acceptance on the repaired
+runtime/test tree passed **1,501 tests**, with three existing host symlink-
+privilege skips, zero failures and zero errors, in **597.44 seconds** of pytest
+time. All 129 delivery files matched their pre-run hashes. RuntimeWarning and
+ResourceWarning were errors. Combined parent/worker coverage was **97.4660%**
+(6,082/6,193 statements and 1,880/1,976 branches), above the unchanged 95%
+gate. The new actor-stream module reached 596/619 statements and 186/204
+branches; the actor broker reached 684/699 statements and 224/232 branches.
+These are local coverage results, not distributed-system performance or whole-
+reference parity.
+
+An earlier full run retained four real failures: three actor startup deadlines
+under concurrent host load and one fixture that read a newly created marker
+before its writer completed. The latter has a deterministic failing replay and
+the fixture now polls for the complete marker contents within its original
+20-second deadline. A separate uncontended full run passed before that fixture
+repair, and the complete final run above passed afterward. No runtime timeout
+or coverage threshold was relaxed; the CI job-level cap is 30 minutes to bound
+the expanded process-spawn suite while retaining explicit per-operation limits.
+
+An earlier source-to-sdist-to-wheel byte audit, before the final documentation
+revision, matched 30 runtime files, four metadata files and 120 source-
+distribution files. The wheel's 35 RECORD members were complete and all 34
+non-self digests and sizes matched. A strict metadata check passed for both
+artifacts. The current-tree distributions still need rebuilding and auditing;
+installed-wheel execution, cross-platform selected tests and hosted exact-head
+checks remain separate obligations.

@@ -21,7 +21,11 @@ from dataclasses import dataclass
 from multiprocessing.connection import Connection, wait
 from threading import Condition, Event, Lock, Thread, current_thread
 from types import MappingProxyType
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from graph_sail.actor_streams import ActorMethodStream, ActorStreamConfig, _OwnedEndpoint
+    from graph_sail.task_streams import TaskStreamConfig
 
 from graph_sail._completion import _await_snapshot, _CompletionHub, _Snapshot
 from graph_sail.errors import GraphSailError, ValidationError
@@ -202,6 +206,7 @@ class ActorDefinition:
 
     factory: Callable[..., object]
     methods: tuple[str, ...]
+    stream_methods: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -216,6 +221,14 @@ class ActorDefinition:
             _identifier(method, "method")
         if len(set(self.methods)) != len(self.methods):
             raise ValidationError("method names must be unique")
+        if type(self.stream_methods) is not tuple or len(self.stream_methods) > 64:
+            raise ValidationError("stream_methods must be a tuple of at most 64 names")
+        for method in self.stream_methods:
+            _identifier(method, "stream method")
+        if len(set(self.stream_methods)) != len(self.stream_methods) or set(
+            self.stream_methods
+        ).intersection(self.methods):
+            raise ValidationError("stream method names must be unique and disjoint")
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +245,9 @@ class ActorRegistry:
             _identifier(name, "actor name")
             if not isinstance(definition, ActorDefinition):
                 raise ValidationError("registry entries must be ActorDefinition values")
-            snapshot[name] = ActorDefinition(definition.factory, definition.methods)
+            snapshot[name] = ActorDefinition(
+                definition.factory, definition.methods, definition.stream_methods
+            )
         object.__setattr__(self, "actors", MappingProxyType(snapshot))
 
 
@@ -348,11 +363,28 @@ def _worker(
 ) -> None:
     """Top-level spawn target; registered methods execute sequentially here."""
     stream_shutdown: Callable[[], object] | None = None
+    actor_session = None
     problem: BaseException | None = None
     try:
         try:
-            factory, names, args, kwargs = _startup_fields(_unpack(startup))
-            if task_cancellation is None:
+            data = _unpack(startup)
+            from graph_sail.actor_streams import _PROFILE, _ActorSession, _profile_startup
+
+            is_actor_stream = (
+                type(data) is tuple and bool(data) and type(data[0]) is str and data[0] == _PROFILE
+            )
+            if is_actor_stream:
+                factory, names, stream_names, args, kwargs = _profile_startup(data)
+                if task_cancellation is None:
+                    raise TypeError("actor stream profile requires its owned cancellation endpoint")
+                instance = _synchronous(factory(*args, **kwargs))
+                actor_session = _ActorSession(instance, stream_names, task_cancellation, limit)
+                stream_shutdown = actor_session.shutdown
+            else:
+                factory, names, args, kwargs = _startup_fields(data)
+            if is_actor_stream:
+                pass
+            elif task_cancellation is None:
                 instance = _synchronous(factory(*args, **kwargs))
             else:
                 # An OS handle is passed only by the internal task bootstrap,
@@ -386,6 +418,11 @@ def _worker(
             request = _unpack(connection.recv_bytes(limit))
             if request is None:
                 return
+            if actor_session is not None and type(request) is tuple and len(request) == 5:
+                connection.send_bytes(actor_session.dispatch(request))
+                continue
+            if actor_session is not None and actor_session.active:
+                raise ActorDiedError("ordinary invocation during actor stream lease")
             request_id, name, args, kwargs = _request_fields(request, methods)
             try:
                 result = _synchronous(methods[name](*args, **kwargs))
@@ -434,6 +471,7 @@ class ActorCall:
         self._future: Future[object] = Future()
         self._completion = _CompletionHub()
         self._elapsed_seconds: float | None = None
+        self._operation_timeout: float | None = None
 
     @property
     def request_id(self) -> int:
@@ -512,6 +550,10 @@ class ProcessActor:
     Both join the child; forced shutdown can leave application side effects.
     """
 
+    _actor_stream_endpoints: tuple[_OwnedEndpoint, _OwnedEndpoint]
+    _actor_stream_sender: _OwnedEndpoint
+    _actor_stream_cleanup_lock: Lock
+
     def __init__(
         self,
         registry: ActorRegistry,
@@ -521,6 +563,16 @@ class ProcessActor:
         kwargs: Mapping[str, object] | None = None,
         config: ActorConfig | None = None,
     ) -> None:
+        if (
+            isinstance(registry, ActorRegistry)
+            and isinstance(name, str)
+            and name in registry.actors
+            and registry.actors[name].stream_methods
+        ):
+            from graph_sail.actor_streams import _initialize_actor
+
+            _initialize_actor(self, registry, name, args, kwargs, config)
+            return
         self._initialize(registry, name, args=args, kwargs=kwargs, config=config)
 
     @classmethod
@@ -614,7 +666,9 @@ class ProcessActor:
         if name not in registry.actors:
             raise ValidationError(f"actor {name} is not registered")
         definition = registry.actors[name]
-        definition = ActorDefinition(definition.factory, definition.methods)
+        definition = ActorDefinition(
+            definition.factory, definition.methods, definition.stream_methods
+        )
         if config is None:
             config = ActorConfig()
         if not isinstance(config, ActorConfig):
@@ -626,13 +680,26 @@ class ProcessActor:
             config.method_timeout_seconds,
         )
         constructor_kwargs = self._arguments(args, kwargs)
-        startup = _pack(
-            (definition.factory, definition.methods, args, constructor_kwargs),
-            config.max_message_bytes,
-        )
+        startup_value: object = (definition.factory, definition.methods, args, constructor_kwargs)
+        if definition.stream_methods:
+            from graph_sail.actor_streams import _PROFILE
+
+            startup_value = (
+                _PROFILE,
+                definition.factory,
+                definition.methods,
+                definition.stream_methods,
+                args,
+                constructor_kwargs,
+            )
+        startup = _pack(startup_value, config.max_message_bytes)
         self._config = config
         self._name = name
         self._methods = definition.methods
+        self._stream_methods = definition.stream_methods
+        self._stream_owner: ActorMethodStream | None = None
+        self._stream_lease: object | None = None
+        self._next_stream_id = 1
         self._condition = Condition()
         self._queue: deque[tuple[ActorCall, bytes]] = deque()
         self._pending: dict[int, ActorCall] = {}
@@ -765,6 +832,10 @@ class ProcessActor:
                 raise ActorError("reentrant actor submission during serialization is not supported")
             if self._closing or self._closed.is_set():
                 raise ActorClosedError("actor is closing or closed")
+            if self._stream_lease is not None:
+                from graph_sail.actor_streams import ActorStreamBusyError
+
+                raise ActorStreamBusyError("actor has an exclusive stream lease")
             if len(self._pending) >= self.config.max_pending:
                 raise ActorQueueFullError(
                     "actor mailbox is full; wait for accepted calls to complete"
@@ -786,8 +857,27 @@ class ProcessActor:
             self._condition.notify_all()
             return handle
 
+    def stream(
+        self,
+        method: str,
+        *,
+        args: tuple[object, ...] = (),
+        kwargs: Mapping[str, object] | None = None,
+        config: TaskStreamConfig | None = None,
+        stream_config: ActorStreamConfig | None = None,
+    ) -> ActorMethodStream:
+        """Lease this idle actor for one native bound generator method."""
+        from graph_sail.actor_streams import _start_actor_stream
+
+        return _start_actor_stream(self, method, args, kwargs, config, stream_config)
+
     def close(self, timeout: float = 5.0) -> None:
         _seconds(timeout, "timeout")
+        if self._stream_methods:
+            from graph_sail.actor_streams import _shutdown_actor
+
+            _shutdown_actor(self, timeout, force=False)
+            return
         with self._condition:
             self._check_lifecycle_reentry()
             self._closing = True
@@ -801,6 +891,11 @@ class ProcessActor:
             raise self._cleanup_error
 
     def terminate(self) -> None:
+        if self._stream_methods:
+            from graph_sail.actor_streams import _shutdown_actor
+
+            _shutdown_actor(self, 0.0, force=True)
+            return
         self._request_abort(
             ActorClosedError("actor explicitly terminated; accepted work abandoned")
         )
@@ -881,7 +976,7 @@ class ProcessActor:
                     if self._abort is not None:
                         raise self._abort
                     if not self._queue:
-                        if self._closing:
+                        if self._closing and self._stream_lease is None:
                             break
                         if not self._process.is_alive():
                             raise ActorDiedError("idle actor worker exited")
@@ -890,9 +985,16 @@ class ProcessActor:
                     handle, payload = self._queue.popleft()
                     if not handle._future.set_running_or_notify_cancel():
                         del self._pending[handle.request_id]
+                        self._condition.notify_all()
                         continue
                     started = time.monotonic()
                     timeout = self.config.method_timeout_seconds
+                    if handle._operation_timeout is not None:
+                        timeout = (
+                            handle._operation_timeout
+                            if timeout is None
+                            else min(timeout, handle._operation_timeout)
+                        )
                     deadline = None if timeout is None else started + timeout
                     # Dispatch and stop requests share one admission lock. The
                     # worker has acknowledged startup/the previous response and
@@ -924,15 +1026,34 @@ class ProcessActor:
                 pending = list(self._pending.values())
                 self._pending.clear()
                 self._queue.clear()
+                self._condition.notify_all()
+                owner = self._stream_owner
             try:
-                for handle in pending:
-                    # Atomically prevent cancellation racing with failure delivery.
-                    if handle._future.running() or handle._future.set_running_or_notify_cancel():
-                        handle._set_exception(failure or ActorClosedError("actor closed"))
+                if owner is not None and self._stream_lease is not None:
+                    try:
+                        owner._stream.cancel()
+                    except BaseException as error:
+                        primary = error if failure is None else _preserve_failure(failure, error)
+                        if primary is not failure:
+                            failure = ActorDiedError(
+                                f"actor stream stop notification failed: {type(primary).__name__}"
+                            )
+                            failure.__cause__ = primary
+                        with self._condition:
+                            self._failure = failure
             finally:
-                self._cleanup_process(
-                    graceful=failure is None or isinstance(failure, ActorDiedError)
-                )
+                try:
+                    for handle in pending:
+                        # Atomically prevent cancellation racing with failure delivery.
+                        if (
+                            handle._future.running()
+                            or handle._future.set_running_or_notify_cancel()
+                        ):
+                            handle._set_exception(failure or ActorClosedError("actor closed"))
+                finally:
+                    self._cleanup_process(
+                        graceful=failure is None or isinstance(failure, ActorDiedError)
+                    )
 
     def _cleanup_process(self, *, graceful: bool) -> None:
         problems: list[str] = []
@@ -956,6 +1077,9 @@ class ProcessActor:
         # Closing our pipe first lets an idle worker exit normally on EOF before
         # escalation; waiting with that pipe open would force-kill an idle actor.
         attempt("close pipe", self._connection.close)
+        for endpoint in getattr(self, "_actor_stream_endpoints", ()):
+            if not endpoint.closed:
+                attempt("close stream cancellation endpoint", endpoint.close)
         try:
             if self._process.pid is not None:
                 # EOF precedes complete interpreter teardown, especially when

@@ -6,6 +6,11 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Stateful generator-method streams on existing process actor instances, with
+  an opt-in compatible wire profile, bounded private advancement credits,
+  acknowledged cleanup/reuse and conservative whole-actor cancellation retirement.
+- Offline stateful actor-stream example and protocol, real-spawn, async-observer
+  and retained-cleanup regression tests.
 - Native async-generator task streams with real await interleaving, bounded
   mailbox credit, explicit loop-affine ownership, wait-only consumer cancellation
   and retained ownership on startup or invalid native cleanup. Includes an offline

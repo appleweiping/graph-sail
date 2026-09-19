@@ -7,6 +7,13 @@ from graph_sail._completion import (
     AsyncSourceError,
     AsyncWaitLimitError,
 )
+from graph_sail.actor_streams import (
+    ActorMethodStream,
+    ActorStreamBusyError,
+    ActorStreamConfig,
+    ActorStreamResult,
+    ActorStreamState,
+)
 from graph_sail.actors import (
     ActorCall,
     ActorClosedError,
@@ -111,11 +118,16 @@ __all__ = [
     "ActorDefinition",
     "ActorDiedError",
     "ActorError",
+    "ActorMethodStream",
     "ActorQueueFullError",
     "ActorRegistry",
     "ActorRemoteError",
     "ActorSerializationError",
     "ActorStartupError",
+    "ActorStreamBusyError",
+    "ActorStreamConfig",
+    "ActorStreamResult",
+    "ActorStreamState",
     "ActorTimeoutError",
     "AsyncSourceCancelledError",
     "AsyncSourceControlError",

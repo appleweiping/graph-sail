@@ -41,6 +41,10 @@ self-contained and loads no remote scripts, fonts, or analytics.
 
 ## Features
 
+- Stateful native generator methods on an existing local process actor, with
+  exclusive backpressure, verified generator cleanup and explicit state-loss
+  on running cancellation; see [actor streams](docs/actor-method-streams.md) and
+  the [offline example](examples/actor_method_stream.py).
 - Real native async-generator producers on one explicitly owned lazy asyncio Task,
   with bounded pre-advance credit, one-shot cancellation and awaited native cleanup;
   see [native async streams](docs/native-async-task-streams.md) and the
