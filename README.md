@@ -46,6 +46,9 @@ self-contained and loads no remote scripts, fonts, or analytics.
   see [stream mapping](docs/stream-map.md) and its [offline example](examples/stream_map.py).
   A bounded stream yield can also execute a full local [fork/join DAG](docs/stream-graph.md)
   via the [stream graph example](examples/stream_graph.py).
+- An accepted local source yield can also drive a complete
+  [spawn-process fork/join DAG](docs/process-stream-graph.md) before source EOF,
+  with joined child ownership; see the [offline example](examples/process_stream_graph.py).
 - Stateful native generator methods on an existing local process actor, with
   exclusive backpressure, verified generator cleanup and explicit state-loss
   on running cancellation; see [actor streams](docs/actor-method-streams.md) and

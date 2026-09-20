@@ -22,6 +22,7 @@ from graph_sail.actors import (
     _CancellationConnection,
     _pack,
     _preserve_failure,
+    _StreamStartupCleanup,
 )
 from graph_sail.errors import GraphSailError, ValidationError
 from graph_sail.execution import (
@@ -211,6 +212,7 @@ class _ProcessInvoker:
         self.config = config
         self.lock = Lock()
         self.leases: dict[int, _Lease] = {}
+        self.startup_cleanup: list[_StreamStartupCleanup] = []
         self.attempts: list[ProcessAttempt] = []
         self.workers: list[ProcessWorker] = []
         self.next_id = 1
@@ -221,25 +223,40 @@ class _ProcessInvoker:
             lease = self.leases.get(owner)
         if lease is not None:
             return lease
-        actor, sender = ProcessActor._for_task_worker(
-            ActorConfig(
-                max_pending=1,
-                max_message_bytes=self.config.max_message_bytes,
-                startup_timeout_seconds=self.config.startup_timeout_seconds,
+        try:
+            actor, sender = ProcessActor._for_task_worker(
+                ActorConfig(
+                    max_pending=1,
+                    max_message_bytes=self.config.max_message_bytes,
+                    startup_timeout_seconds=self.config.startup_timeout_seconds,
+                )
             )
-        )
+        except BaseException as error:
+            cleanup = getattr(error, "process_stream_cleanup", None)
+            if cleanup is not None and not cleanup.closed:
+                with self.lock:
+                    self.startup_cleanup.append(cleanup)
+            raise
+        lease = None
         try:
             with self.lock:
                 lease = _Lease(self.next_id, actor, sender)
                 self.next_id += 1
                 self.leases[owner] = lease
         except BaseException as error:
-            primary = error
-            for cleanup_operation in (sender.close, actor.terminate):
-                try:
-                    cleanup_operation()
-                except BaseException as cleanup:
-                    primary = _preserve_failure(primary, cleanup)
+            # An interrupted insertion may already have admitted the lease.
+            # In that case it alone owns the child until invoker.close().
+            with self.lock:
+                admitted = lease is not None and self.leases.get(owner) is lease
+            if admitted:
+                raise
+            # Otherwise retain the worker under the bootstrap owner so an
+            # incomplete close is not lost.
+            primary = _StreamStartupCleanup(actor, (sender,), started=True).retain(error)
+            cleanup = getattr(primary, "process_stream_cleanup", None)
+            if cleanup is not None and not cleanup.closed:
+                with self.lock:
+                    self.startup_cleanup.append(cleanup)
             if primary is not error:
                 raise primary from error
             raise
@@ -411,6 +428,14 @@ class _ProcessInvoker:
                 self._retire(lease, force=False)
             except BaseException as error:
                 problem = error if problem is None else _preserve_failure(problem, error)
+        for owner in tuple(self.startup_cleanup):
+            if owner.closed:
+                continue
+            try:
+                owner.close()
+            except BaseException as error:
+                problem = error if problem is None else _preserve_failure(problem, error)
+        self.startup_cleanup = [owner for owner in self.startup_cleanup if not owner.closed]
         if problem is not None:
             raise problem
 
@@ -476,16 +501,43 @@ def _run_process_runner(
             invoker.close()
         except BaseException as cleanup:
             primary = _preserve_failure(error, cleanup)
+            _retain_process_cleanup(primary, invoker)
             if primary is not error:
                 raise primary from error
         raise
-    invoker.close()
+    try:
+        invoker.close()
+    except BaseException as error:
+        _retain_process_cleanup(error, invoker)
+        raise
     return ProcessExecutionResult(
         result,
         tuple(sorted(invoker.attempts, key=lambda item: (item.node_id, item.attempt))),
         tuple(sorted(invoker.workers, key=lambda item: item.worker_id)),
         (time.monotonic() - began) * 1000,
     )
+
+
+class _ProcessGraphCleanup:
+    """Retain an invoker only when a failed close leaves known child leases."""
+
+    def __init__(self, invoker: _ProcessInvoker) -> None:
+        self._invoker = invoker
+        self._close_lock = Lock()
+
+    @property
+    def closed(self) -> bool:
+        with self._close_lock:
+            return not self._invoker.leases and not self._invoker.startup_cleanup
+
+    def close(self) -> None:
+        with self._close_lock:
+            self._invoker.close()
+
+
+def _retain_process_cleanup(error: BaseException, invoker: _ProcessInvoker) -> None:
+    if invoker.leases or invoker.startup_cleanup:
+        error.process_graph_cleanup = _ProcessGraphCleanup(invoker)  # type: ignore[attr-defined]
 
 
 __all__ = [

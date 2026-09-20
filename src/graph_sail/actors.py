@@ -84,8 +84,15 @@ class _StreamStartupCleanup:
     acquired resources from the internal stream bootstrap are admitted here.
     """
 
-    def __init__(self, actor: ProcessActor, endpoints: tuple[_CancellationConnection, ...]) -> None:
+    def __init__(
+        self,
+        actor: ProcessActor,
+        endpoints: tuple[_CancellationConnection, ...],
+        *,
+        started: bool = False,
+    ) -> None:
         self._actor = actor
+        self._actor_started = started
         self._endpoints = endpoints
         self._endpoints_closed = [False] * len(endpoints)
         self._actor_closed = False
@@ -135,7 +142,7 @@ class _StreamStartupCleanup:
     def _close_actor(self) -> None:
         actor = self._actor
         broker = getattr(actor, "_thread", None)
-        if broker is not None and broker.ident is not None:
+        if self._actor_started or (broker is not None and broker.ident is not None):
             # Includes an initializer wrapper that raised *after* starting the
             # actual broker. Never reap concurrently with that broker.
             actor.terminate()
@@ -156,7 +163,11 @@ class _StreamStartupCleanup:
         try:
             self.close()
         except BaseException as cleanup:
+            original = primary
             primary = _preserve_failure(primary, cleanup)
+            if primary is original and cleanup is not original:
+                for note in tuple(getattr(cleanup, "__notes__", ())):
+                    primary.add_note(note)
         # These are trusted local exceptions, not a user-facing wire document.
         # Preserve the original KeyboardInterrupt/SystemExit object and type.
         primary.process_stream_cleanup = self  # type: ignore[attr-defined]
@@ -585,25 +596,21 @@ class ProcessActor:
         from graph_sail.process_execution import _TaskWorker
 
         registry = ActorRegistry({"task_worker": ActorDefinition(_TaskWorker, ("invoke",))})
+        actor = cls.__new__(cls)
         receiver, sender = multiprocessing.get_context("spawn").Pipe(duplex=False)
-        ready = False
+        ownership = _StreamStartupCleanup(actor, (receiver, sender))
         try:
-            actor = cls.__new__(cls)
-            actor._initialize(registry, "task_worker", config=config, task_cancellation=receiver)
-            ready = True
+            actor._initialize(
+                registry,
+                "task_worker",
+                config=config,
+                task_cancellation=receiver,
+                _stream_ownership=ownership,
+            )
+            ownership._actor_started = True
             receiver.close()
         except BaseException as error:
-            primary = error
-            for endpoint in (receiver, sender):
-                try:
-                    endpoint.close()
-                except BaseException as cleanup:
-                    primary = _preserve_failure(primary, cleanup)
-            if ready:
-                try:
-                    actor.terminate()
-                except BaseException as cleanup:
-                    primary = _preserve_failure(primary, cleanup)
+            primary = ownership.retain(error)
             if primary is not error:
                 raise primary from error
             raise

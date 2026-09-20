@@ -108,10 +108,22 @@ No pool lock is held across native close or process join. Startup failure,
 serialization failure, normal completion and cancellation close owned endpoints.
 
 All successfully started workers are joined before a result is returned. Cleanup
-failure raises rather than pretending the worker is gone; a primary invocation
+failure raises rather than pretending the worker is gone; when known child
+leases or partial-startup owners remain, the raised exception has
+`process_graph_cleanup` with `closed`
+and retryable `close()`. An `ExecutionHandle` retains and retries it on its own
+`close()` before reporting `closed == True`. Direct blocking callers may retain
+the exception and retry its capability themselves. A primary invocation
 exception/interrupt remains primary and records secondary cleanup notes. Forced
 termination can leave files, remote calls or other application effects incomplete.
 The library does not manage resources created by user task code.
+
+The private task-worker bootstrap also retains an owner if it fails after
+acquiring endpoints or starting a child. Its first cleanup attempt runs at the
+bootstrap boundary; if incomplete, the process invoker retains the capability,
+tries it again when its scheduler drivers have joined, and exposes any still
+unresolved ownership through the same `process_graph_cleanup` exception
+attribute. A driver-side failed attempt is not an application retry candidate.
 
 ## Budgets and what they do not bound
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from threading import Condition, Event, Thread, current_thread
+from threading import Condition, Event, Lock, Thread, current_thread
 from types import TracebackType
 from typing import Generic, TypeVar, cast
 
@@ -99,6 +99,7 @@ class ExecutionHandle(Generic[_Result]):
 
     def __init__(self, _runner: _Runner, _run: Callable[[], _Result], _stop: Event) -> None:
         self._condition = Condition()
+        self._close_lock = Lock()
         self._completion = _CompletionHub()
         self._terminal: dict[str, tuple[TaskExecution, object]] = {}
         self._nodes = tuple(_runner.order)
@@ -129,7 +130,7 @@ class ExecutionHandle(Generic[_Result]):
         return NodeHandle(self, node_id)
 
     def done(self) -> bool:
-        """Whether backend work and its cleanup completed, successfully or otherwise."""
+        """Whether the controller settled, possibly with retryable cleanup left."""
         with self._condition:
             return self._finished
 
@@ -236,14 +237,16 @@ class ExecutionHandle(Generic[_Result]):
         """Request cancellation and join; timeout retains ownership for a later retry.
 
         Cleanup does not raise a stored execution failure: use result() to observe
-        it. A trusted non-cooperating thread task may prevent an unbounded close
-        from returning. This does not force-stop thread callbacks.
+        it. A failed process cleanup may itself be retried and raise here while
+        retaining ownership. A trusted non-cooperating thread task may prevent
+        an unbounded close from returning. This does not force-stop callbacks.
         """
         _timeout(timeout)
         if current_thread() is self._thread:
             raise RuntimeError("controller cannot join itself")
-        self.cancel()
-        self._join(timeout)
+        with self._close_lock:
+            self.cancel()
+            self._join(timeout)
 
     def _join(self, timeout: float | None) -> None:
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -256,6 +259,10 @@ class ExecutionHandle(Generic[_Result]):
         self._thread.join(remaining)
         if self._thread.is_alive():
             raise TimeoutError("execution still owns a live controller; retry close")
+        with self._condition:
+            cleanup = getattr(self._error, "process_graph_cleanup", None)
+        if cleanup is not None and not cleanup.closed:
+            cleanup.close()
         with self._condition:
             self._closed = True
 

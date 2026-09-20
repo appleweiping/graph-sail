@@ -91,6 +91,12 @@ from graph_sail.process_execution import (
     ProcessWorker,
     execute_process_graph,
 )
+from graph_sail.process_stream_graph import (
+    ProcessStreamGraph,
+    ProcessStreamGraphExecutionError,
+    ProcessStreamGraphInfrastructureError,
+    start_process_stream_graph,
+)
 from graph_sail.process_task_streams import (
     ProcessStreamConfig,
     ProcessStreamResult,
@@ -181,6 +187,9 @@ __all__ = [
     "ProcessAttempt",
     "ProcessExecutionResult",
     "ProcessStreamConfig",
+    "ProcessStreamGraph",
+    "ProcessStreamGraphExecutionError",
+    "ProcessStreamGraphInfrastructureError",
     "ProcessStreamResult",
     "ProcessStreamWorker",
     "ProcessTaskConfig",
@@ -225,6 +234,7 @@ __all__ = [
     "start_async_task_stream",
     "start_graph",
     "start_process_graph",
+    "start_process_stream_graph",
     "start_process_task_stream",
     "start_stream_graph",
     "start_stream_map",
