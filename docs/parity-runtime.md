@@ -619,3 +619,22 @@ not arbitrary DAG edge composition or distributed object-reference streaming.
 Acceptance requires current-tree focused and full-suite tests, package and
 installed-wheel checks on Windows/Linux, then hosted exact-head CI/CodeQL.
 Results from an earlier candidate revision do not carry across code changes.
+
+## Local per-yield DAG candidate
+
+The opt-in [stream graph](stream-graph.md) now feeds each accepted native source
+yield into an independently validated local `GraphSpec` fork/join invocation.
+It reuses the existing dependency, placement and logical resource runner while
+the source and ordered public output retain `StreamMap`'s pre-advance credit.
+Two yielded DAGs can overlap and complete out of order. A discovered shared
+cancellation bug in the underlying map edge was reproduced with a barrier:
+failure of item 1 cancelled still-running item 0. Per-item map cancellation
+now preserves the earlier ordered prefix while cancelling later accepted
+items; source failure likewise does not revoke a prior accepted item's graph.
+
+Focused normal and `-O` tests and local static checks are evidence for this
+candidate only. Full-suite/coverage, current-source distribution and installed
+package proof, cross-platform selected tests, hosted exact-head CI/CodeQL and
+merge remain separate acceptance gates. This is still local threaded
+execution, without distributed ObjectRef ownership, worker lineage or cluster
+recovery; no whole-Ray parity is claimed.

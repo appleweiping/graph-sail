@@ -100,6 +100,7 @@ from graph_sail.process_task_streams import (
 )
 from graph_sail.resources import UNITS_PER_RESOURCE, LogicalResources, ResourceUsage
 from graph_sail.simulation import SimulationEvent, SimulationResult, simulate_plan
+from graph_sail.stream_graph import StreamGraphExecutionError, start_stream_graph
 from graph_sail.stream_map import (
     StreamMap,
     StreamMapConfig,
@@ -189,6 +190,7 @@ __all__ = [
     "ResourceUsage",
     "SimulationEvent",
     "SimulationResult",
+    "StreamGraphExecutionError",
     "StreamMap",
     "StreamMapConfig",
     "StreamMapContext",
@@ -224,6 +226,7 @@ __all__ = [
     "start_graph",
     "start_process_graph",
     "start_process_task_stream",
+    "start_stream_graph",
     "start_stream_map",
     "start_task_stream",
 ]

@@ -56,7 +56,9 @@ use seconds; their timeout leaves the source and maps running. Completion may
 require the caller to consume items first, because a full pending window stops
 source advancement. One mapper/source/serialization failure retains and
 publishes the successful ordered prefix, then raises the original failure;
-there is no implicit retry, rollback, or exactly-once external-effect claim.
+earlier accepted maps keep their own cancellation signals while later maps
+are asked to stop. There is no implicit retry, rollback, or exactly-once
+external-effect claim.
 
 `cancel()` discards unconsumed results and requests cooperative stop. It does
 not force-interrupt a mapper or a source blocked in application code. `close`

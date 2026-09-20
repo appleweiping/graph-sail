@@ -44,6 +44,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - One bounded local source-to-map edge with per-yield downstream execution,
   pre-advance credit, ordered mapped results and explicit joined ownership;
   see [stream mapping](docs/stream-map.md) and its [offline example](examples/stream_map.py).
+  A bounded stream yield can also execute a full local [fork/join DAG](docs/stream-graph.md)
+  via the [stream graph example](examples/stream_graph.py).
 - Stateful native generator methods on an existing local process actor, with
   exclusive backpressure, verified generator cleanup and explicit state-loss
   on running cancellation; see [actor streams](docs/actor-method-streams.md) and

@@ -128,6 +128,7 @@ class StreamMap(Iterator[TaskStreamItem]):
         self._published = 0
         self._running = 0
         self._worker_threads: set[Thread] = set()
+        self._map_stop: dict[int, Event] = {}
         self._completed: dict[int, bytes | BaseException] = {}
         self._failure_sequence: int | None = None
         self._failure: BaseException | None = None
@@ -146,16 +147,25 @@ class StreamMap(Iterator[TaskStreamItem]):
             if self._failure_sequence is None or sequence < self._failure_sequence:
                 self._failure_sequence = sequence
                 self._failure = failure
+                self._cancel_later_maps(sequence)
             self._stop.set()
             self._condition.notify_all()
 
-    def _map_one(self, sequence: int, source_bytes: bytes) -> bytes:
+    def _cancel_later_maps(self, failure_sequence: int) -> None:
+        """Preserve earlier ordered work while stopping already accepted successors."""
+        for sequence, event in self._map_stop.items():
+            if sequence > failure_sequence:
+                event.set()
+
+    def _map_one(self, sequence: int, source_bytes: bytes, map_stop: Event) -> bytes:
         worker = current_thread()
         with self._condition:
             self._worker_threads.add(worker)
         try:
+            token = CancellationToken(map_stop)
+            token.raise_if_cancelled()
             value = _unpack(source_bytes)
-            result = self._mapper(StreamMapContext(sequence, CancellationToken(self._stop)), value)
+            result = self._mapper(StreamMapContext(sequence, token), value)
             if inspect.isawaitable(result):
                 if inspect.iscoroutine(result):
                     result.close()
@@ -172,6 +182,7 @@ class StreamMap(Iterator[TaskStreamItem]):
             settled = _not_eof_failure(error)
         with self._condition:
             self._running -= 1
+            self._map_stop.pop(sequence, None)
             if not self._discard:
                 self._completed[sequence] = settled
                 if isinstance(settled, BaseException) and (
@@ -180,6 +191,7 @@ class StreamMap(Iterator[TaskStreamItem]):
                     self._failure_sequence = sequence
                     self._failure = settled
                     self._stop.set()
+                    self._cancel_later_maps(sequence)
             self._condition.notify_all()
 
     def _drive(self) -> None:
@@ -225,7 +237,13 @@ class StreamMap(Iterator[TaskStreamItem]):
                     if self._stop.is_set():
                         break
                     sequence = self._accepted
-                    future = executor.submit(self._map_one, sequence, source_bytes)
+                    map_stop = Event()
+                    self._map_stop[sequence] = map_stop
+                    try:
+                        future = executor.submit(self._map_one, sequence, source_bytes, map_stop)
+                    except BaseException:
+                        del self._map_stop[sequence]
+                        raise
                     self._accepted += 1
                     self._running += 1
 
@@ -338,6 +356,8 @@ class StreamMap(Iterator[TaskStreamItem]):
             active = not self._finished
             self._discard = True
             self._stop.set()
+            for event in self._map_stop.values():
+                event.set()
             self._completed.clear()
             self._condition.notify_all()
             return active

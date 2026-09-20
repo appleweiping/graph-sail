@@ -55,6 +55,37 @@ def test_result_deserialization_failure_is_terminal() -> None:
         handle.close(3)
 
 
+def test_public_deserialization_failure_cancels_later_running_map() -> None:
+    global _FLAKY_UNPICKLE_ATTEMPTS
+    _FLAKY_UNPICKLE_ATTEMPTS = 0
+    second_entered = Event()
+    second_cancelled = Event()
+
+    def source(_context):
+        yield 0
+        yield 1
+
+    def mapper(context, value):
+        if value == 0:
+            return _FlakyUnpickle()
+        second_entered.set()
+        if context.cancellation._internal.wait(3):
+            second_cancelled.set()
+            context.cancellation.raise_if_cancelled()
+        return "late-effect"
+
+    handle = start_stream_map(source, mapper, config=StreamMapConfig(2, 2))
+    try:
+        assert second_entered.wait(3)
+        with pytest.raises(ValueError, match="transient-unpickle"):
+            handle.next(3)
+        assert second_cancelled.wait(3)
+        with pytest.raises(ValueError, match="transient-unpickle"):
+            handle.next(3)
+    finally:
+        handle.close(5)
+
+
 def test_first_map_completes_before_source_eof() -> None:
     source_can_finish = Event()
     mapped = Event()
