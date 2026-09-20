@@ -16,9 +16,12 @@ task retries are disallowed to avoid repeating ambiguous per-item effects.
 
 ```python
 with start_stream_graph(
-    source, graph, TaskRegistry({"left": left, "right": right, "join": join}),
+    source,
+    graph,
+    TaskRegistry({"left": left, "right": right, "join": join}),
     {"input": "cpu", "left": "cpu", "right": "cpu", "join": "cpu"},
-    input_node="input", output_node="join",
+    input_node="input",
+    output_node="join",
     config=StreamMapConfig(max_pending=2, max_workers=2),
     execution_config=ExecutionConfig(max_workers=3, device_workers={"cpu": 3}),
 ) as stream:
