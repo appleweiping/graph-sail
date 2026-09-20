@@ -70,6 +70,11 @@ daemon-process policy: tasks cannot spawn multiprocessing children themselves.
 
 ## Retry, cancellation and child ownership
 
+The nonblocking `start_process_graph` owner additionally supports
+[selective node cancellation](process-node-cancellation.md). It uses this
+same child EOF/grace/retirement machinery, without changing the blocking
+`execute_process_graph` or whole-run cancellation contract.
+
 Only an application exception returned by the child is classified using the
 original `TaskDefinition.retry_on` classes **inside that child**. The existing
 scheduler applies `max_retries` and retry delay. Remote exception classes are not

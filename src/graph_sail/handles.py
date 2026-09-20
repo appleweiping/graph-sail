@@ -375,6 +375,29 @@ class ExecutionHandle(Generic[_Result]):
             raise RuntimeError("finished execution has no terminal node result")
 
 
+class ProcessExecutionHandle(ExecutionHandle[ProcessExecutionResult]):
+    """A process-DAG owner with a request to cancel one node, not its peers."""
+
+    def __init__(
+        self,
+        runner: _Runner,
+        run: Callable[[], ProcessExecutionResult],
+        stop: Event,
+    ) -> None:
+        super().__init__(runner, run, stop)
+        self._process_runner = runner
+
+    def cancel_node(self, node_id: str) -> bool:
+        """Request one node's cancellation; its terminal result settles the race."""
+        # isinstance() can be spoofed by an unrelated object's __class__ property.
+        if not issubclass(type(node_id), str):
+            raise ValidationError("node ID must belong to this execution")
+        # Bypass subclass __str__/__hash__/__eq__ before the runner's lock.
+        native_id = str.__str__(node_id)
+        self._validate_node(native_id)
+        return self._process_runner.request_node_cancel(native_id)
+
+
 def _timeout(value: float | None) -> None:
     if value is not None:
         _duration(value, "wait timeout", minimum=0, maximum=86400)
@@ -405,7 +428,7 @@ def start_process_graph(
     *,
     config: ExecutionConfig | None = None,
     process_config: ProcessTaskConfig | None = None,
-) -> ExecutionHandle[ProcessExecutionResult]:
+) -> ProcessExecutionHandle:
     """Preflight/serialize registrations synchronously; spawn workers lazily.
 
     Received values are parent-side objects also used for later dispatch. Early
@@ -416,15 +439,28 @@ def start_process_graph(
     stop = Event()
     tasks, assigned, memory, options = _prepare_execution(graph, registry, placements, config, stop)
     invoker = _prepare_process_invoker(tasks, options, process_config)
-    runner = _Runner(graph, tasks, assigned, memory, options, stop, invocation=invoker)
-    return ExecutionHandle(
-        runner, lambda: _run_process_runner(runner, invoker, began), stop
-    )._start()
+    runner = _Runner(
+        graph,
+        tasks,
+        assigned,
+        memory,
+        options,
+        stop,
+        invocation=invoker,
+        selective_cancellation=True,
+    )
+    return cast(
+        ProcessExecutionHandle,
+        ProcessExecutionHandle(
+            runner, lambda: _run_process_runner(runner, invoker, began), stop
+        )._start(),
+    )
 
 
 __all__ = [
     "ExecutionHandle",
     "NodeHandle",
+    "ProcessExecutionHandle",
     "TaskNotSuccessful",
     "WaitResult",
     "start_graph",

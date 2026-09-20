@@ -63,6 +63,7 @@ from graph_sail.execution import (
 from graph_sail.handles import (
     ExecutionHandle,
     NodeHandle,
+    ProcessExecutionHandle,
     TaskNotSuccessful,
     WaitResult,
     start_graph,
@@ -185,6 +186,7 @@ __all__ = [
     "PlanningError",
     "ProcessActor",
     "ProcessAttempt",
+    "ProcessExecutionHandle",
     "ProcessExecutionResult",
     "ProcessStreamConfig",
     "ProcessStreamGraph",

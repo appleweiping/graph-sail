@@ -67,11 +67,16 @@ interpreter-shutdown cleanup guarantee. Waiting from a task on its own graph's
 completion can deadlock and is unsupported.
 
 `cancel()` requests a whole-graph stop. It returns `False` if already requested or
-the controller has finished. It does not cancel one selected node, revoke past
+the controller has finished. It does not itself cancel only one selected node, revoke past
 side effects, or guarantee that a concurrently returning thread task will lose
 its successful result. The scheduler's existing cancellation, fail-fast and
 retry policies remain authoritative. Process workers retain their existing
 cooperative grace and forced-retirement policy.
+
+Only the process-specific `ProcessExecutionHandle` returned by
+`start_process_graph` additionally supports `cancel_node(node_id)`; see
+[selective process-node cancellation](process-node-cancellation.md). Thread
+handles and process-stream-graph items do not acquire that API.
 
 `close(timeout=None)` requests cancellation, waits for backend settlement, then
 joins the controller. Only a successful explicit join sets `closed=True`.
@@ -110,7 +115,7 @@ waiters are not bounded by a new memory quota. Async methods separately bound
 their per-source subscriptions and pending loop slots. Existing message/worker limits
 still apply; no throughput claim is inferred from correctness tests.
 
-Cross-node scheduling, durable recovery, public per-node cancellation, process
+Cross-node scheduling, durable recovery, thread/stream per-node cancellation, process
 and distributed task generators, multiple returns and nested task submission
 remain open. Local native thread [task streams](task-streams.md) and bounded
 `asyncio` observations are separate implemented subsets, not complete reference parity.

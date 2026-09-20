@@ -10,7 +10,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
-from threading import Event
+from threading import Event, Lock
 from types import MappingProxyType
 from typing import Literal, Protocol
 
@@ -44,10 +44,15 @@ class CancellationToken:
 
     _internal: Event
     _external: Event | None = None
+    _node: Event | None = None
 
     @property
     def cancelled(self) -> bool:
-        return self._internal.is_set() or (self._external is not None and self._external.is_set())
+        return (
+            self._internal.is_set()
+            or (self._external is not None and self._external.is_set())
+            or (self._node is not None and self._node.is_set())
+        )
 
     def raise_if_cancelled(self) -> None:
         if self.cancelled:
@@ -405,6 +410,7 @@ class _Runner:
         *,
         invocation: _Invocation | None = None,
         terminal_observer: Callable[[TaskExecution, object], None] | None = None,
+        selective_cancellation: bool = False,
     ) -> None:
         self.graph, self.registry, self.assigned, self.memory, self.config = (
             graph,
@@ -435,6 +441,34 @@ class _Runner:
         self.invocation = _invoke if invocation is None else invocation
         self.terminal_observer = terminal_observer
         self.resources = None if config.resources is None else _ResourcePool(config.resources)
+        self._selective = selective_cancellation
+        self._selective_lock = Lock()
+        self._requested_nodes: set[str] = set()
+        self._node_events: dict[str, Event] = {}
+        self._accepting_requests = True
+
+    def request_node_cancel(self, node: str) -> bool:
+        """Record a request without mutating controller-owned scheduling queues."""
+        if not self._selective:
+            raise RuntimeError("selective cancellation is not enabled")
+        with self._selective_lock:
+            if (
+                not self._accepting_requests
+                or node in self.completed
+                or node in self._requested_nodes
+                or self.stop_reason is not None
+                or self.token.cancelled
+            ):
+                return False
+            self._requested_nodes.add(node)
+            event = self._node_events.get(node)
+            if event is not None:
+                event.set()
+            return True
+
+    def _node_cancel_requested(self, node: str) -> bool:
+        with self._selective_lock:
+            return node in self._requested_nodes
 
     def run(self) -> ExecutionResult:
         pool = ThreadPoolExecutor(
@@ -480,6 +514,9 @@ class _Runner:
                 if selected is cleanup:
                     raise
                 raise selected from None
+            finally:
+                with self._selective_lock:
+                    self._accepting_requests = False
         statuses = {task.status for task in self.completed.values()}
         status: Literal["succeeded", "failed", "cancelled"] = "succeeded"
         if "failed" in statuses:
@@ -510,9 +547,40 @@ class _Runner:
             and time.monotonic() - self.epoch >= timeout
         ):
             self._stop("timeout")
+        if self._selective and self.stop_reason is None:
+            self._drain_node_cancellations()
+
+    def _drain_node_cancellations(self) -> None:
+        with self._selective_lock:
+            if not self._requested_nodes:
+                return
+            pending = tuple(
+                node
+                for node in self.order
+                if node in self._requested_nodes
+                and node not in self.completed
+                and node not in self.running.values()
+            )
+        for node in pending:
+            if node not in self.completed and node not in self.running.values():
+                self._cancel_pending_node(node)
+
+    def _cancel_pending_node(self, node: str) -> None:
+        queue = self.ready[self.assigned[node]]
+        if node in queue:
+            queue.remove(node)
+            heapq.heapify(queue)
+        if self.delayed:
+            self.delayed = [entry for entry in self.delayed if entry[1] != node]
+            heapq.heapify(self.delayed)
+        self._record(node, "cancelled", "target_cancellation")
+        self._skip_descendants(node, "cancelled")
+        if self.config.fail_fast and self.stop_reason is None:
+            self._stop("fail_fast")
 
     def _stop(self, reason: str) -> None:
-        self.stop_reason = reason
+        with self._selective_lock:
+            self.stop_reason = reason
         self.internal.set()
         running = set(self.running.values())
         for node in self.order:
@@ -551,6 +619,15 @@ class _Runner:
             else:
                 queue.remove(node)
                 heapq.heapify(queue)
+            node_event: Event | None = None
+            if self._selective:
+                with self._selective_lock:
+                    cancelled = node in self._requested_nodes
+                    if not cancelled:
+                        node_event = self._node_events.setdefault(node, Event())
+                if cancelled:
+                    self._cancel_pending_node(node)
+                    continue
             context = TaskContext(
                 node,
                 device,
@@ -558,7 +635,9 @@ class _Runner:
                 MappingProxyType(
                     {edge.source: self.outputs[edge.source] for edge in self.incoming[node]}
                 ),
-                self.token,
+                CancellationToken(self.internal, self.token._external, node_event)
+                if self._selective
+                else self.token,
             )
             if self.resources is not None:
                 self.resources.reserve(node, context.attempt)
@@ -592,6 +671,7 @@ class _Runner:
             and len(self.attempts[node]) <= definition.max_retries
             and self.stop_reason is None
             and not self.token.cancelled
+            and not self._node_cancel_requested(node)
         ):
             heapq.heappush(self.delayed, (time.monotonic() + definition.retry_delay_seconds, node))
             return
@@ -600,24 +680,26 @@ class _Runner:
             outcome.attempt.status,
             "task_cancelled" if outcome.attempt.status == "cancelled" else "task_failed",
         )
+        self._skip_descendants(node, outcome.attempt.status)
+        if self.config.fail_fast and self.stop_reason is None:
+            self._stop("fail_fast")
+
+    def _skip_descendants(self, node: str, status: AttemptStatus) -> None:
         descendants = deque(edge.target for edge in self.outgoing[node])
         while descendants:
             child = descendants.popleft()
             if child not in self.completed:
-                cause = (
-                    "dependency_cancelled"
-                    if outcome.attempt.status == "cancelled"
-                    else "dependency_failed"
-                )
+                cause = "dependency_cancelled" if status == "cancelled" else "dependency_failed"
                 self._record(child, "skipped", f"{cause}:{node}")
                 descendants.extend(edge.target for edge in self.outgoing[child])
-        if self.config.fail_fast and self.stop_reason is None:
-            self._stop("fail_fast")
 
     def _record(self, node: str, status: TaskStatus, reason: str) -> None:
-        self.completed[node] = TaskExecution(
-            node, self.assigned[node], status, tuple(self.attempts[node]), reason
-        )
+        with self._selective_lock:
+            self.completed[node] = TaskExecution(
+                node, self.assigned[node], status, tuple(self.attempts[node]), reason
+            )
+            self._requested_nodes.discard(node)
+            self._node_events.pop(node, None)
         if self.terminal_observer is not None:
             self.terminal_observer(self.completed[node], self.outputs.get(node))
 

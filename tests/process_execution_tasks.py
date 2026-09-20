@@ -64,6 +64,50 @@ class StopTask:
             time.sleep(0.002)
 
 
+@dataclass(frozen=True)
+class GateValue:
+    entered: str
+    release: str
+    value: int
+
+    def __call__(self, context):
+        Path(self.entered).write_text(str(os.getpid()), encoding="ascii")
+        wait_for(Path(self.release), 35)
+        return self.value
+
+
+@dataclass(frozen=True)
+class MarkerValue:
+    marker: str
+    value: int
+
+    def __call__(self, context):
+        Path(self.marker).write_text(str(os.getpid()), encoding="ascii")
+        return self.value
+
+
+@dataclass(frozen=True)
+class RetryMarker:
+    marker: str
+
+    def __call__(self, context):
+        Path(self.marker).write_text(str(context.attempt), encoding="ascii")
+        if context.attempt == 1:
+            raise ValueError("retry once")
+        return (42, os.getpid())
+
+
+@dataclass(frozen=True)
+class GateFailure:
+    entered: str
+    release: str
+
+    def __call__(self, context):
+        Path(self.entered).write_text(str(context.attempt), encoding="ascii")
+        wait_for(Path(self.release), 35)
+        raise ValueError("gated application failure")
+
+
 def retry_value_error(context):
     if context.attempt == 1:
         raise ValueError("retry once")

@@ -97,7 +97,8 @@ self-contained and loads no remote scripts, fonts, or analytics.
 - Process-backed DAG tasks reuse the same scheduler with actual child dependency
   values, application retries, native cooperative cancellation and joined retirement.
 - Owned nonblocking thread/process execution handles with selective node results,
-  explicit whole-graph cancellation and joined lifecycle; see
+  explicit whole-graph cancellation, process-only [selective node cancellation](docs/process-node-cancellation.md),
+  and joined lifecycle; see
   [execution handles](docs/execution-handles.md) and the runnable offline example.
 - Fractional and custom [logical task resources](docs/logical-resources.md), with
   exact 0.0001-unit admission, all-or-none named demands, feasible-ready backfill
