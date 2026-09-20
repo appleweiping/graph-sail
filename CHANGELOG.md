@@ -6,6 +6,9 @@ All notable changes are recorded here. This project follows semantic versioning.
 
 ### Added
 
+- Bounded local per-yield source-to-map execution with independent input/output
+  snapshots, ordered delivery, no hidden source prefetch and explicit joinable
+  cancellation; includes an offline example and concurrency regressions.
 - Stateful generator-method streams on existing process actor instances, with
   an opt-in compatible wire profile, bounded private advancement credits,
   acknowledged cleanup/reuse and conservative whole-actor cancellation retirement.

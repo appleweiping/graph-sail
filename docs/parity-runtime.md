@@ -18,7 +18,7 @@ standard-library spawn and pipe lifecycle documentation informed its OS boundary
 
 | Reference subsystem and pinned source | Current Graph Sail evidence | Remaining contracts |
 | --- | --- | --- |
-| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles, selective node results, bounded native thread/process-generator streams and event-loop result/wait methods | Cross-node workers, per-task cancellation, nested tasks, distributed generators, per-yield DAG edges, multiple returns and dashboard event delivery |
+| [Tasks](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/tasks.rst): asynchronous process workers, dependencies, result retrieval, wait/cancel, task events | Trusted local registry, shared thread/process DAG scheduler, dependency snapshots/object refs, logical slots, measured attempts, owned nonblocking execution handles, selective node results, bounded native thread/process-generator streams, one local source-to-map per-yield edge and event-loop result/wait methods | Cross-node workers, per-task cancellation, nested tasks, distributed generators, graph-integrated per-yield DAG edges, multiple returns and dashboard event delivery |
 | [Resource scheduling](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/scheduling/resources.rst): logical CPU/GPU/custom resources and capacities | Per-device logical slots, global thread limit, persistent-memory admission, node compatibility, exact fractional/custom logical task demands with all-or-none admission and joined accounting on both local backends | Locality-aware placement, GPU visibility control, placement groups, cluster capacity and autoscaling; logical resource admission does not acquire hardware |
 | [Task fault tolerance](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/fault_tolerance/tasks.rst): application exception policies, worker failure retries, cancellation and object reconstruction | Bounded application retries with original child exception filtering; local crash detection, joined replacement for independent work, irreversible cooperative EOF cancellation and noncooperative termination | Automatic crash replay with explicit side-effect policy, machine failure recovery, lost-object reconstruction, durable lineage and distributed cancellation |
 | [Actors](https://github.com/ray-project/ray/blob/317c2888eade3c294c4fdb46eff9d9ec290b08f2/doc/source/ray-core/actors.rst): stateful remote workers, handles, methods and concurrency models | Actual local spawn-process actors, explicit trusted factories/method allowlists, FIFO mailboxes, bounded pending calls, asynchronous handles, serialized objects, crash detection and joined shutdown | Multi-node actor placement, named/shared actor ownership, actor-to-actor transport, async/threaded actor policy, checkpointed recovery and integration with DAG resource admission |
@@ -605,3 +605,17 @@ non-self digests and sizes matched. A strict metadata check passed for both
 artifacts. The current-tree distributions still need rebuilding and auditing;
 installed-wheel execution, cross-platform selected tests and hosted exact-head
 checks remain separate obligations.
+
+## Local per-yield mapping candidate
+
+The opt-in [source-to-map edge](stream-map.md) now runs one native producer and
+a bounded trusted local mapper pool. A mapped result can arrive before source
+EOF. An accepted-item credit prevents producer advance until ordered output is
+consumed; snapshots isolate input and result values. Deterministic regressions
+cover no hidden prefetch, out-of-order map completion with ordered publication,
+failure prefixes, exact yield limit, late cancellation after source EOF, owner
+wait reentry and noncooperative close retry. This is one source-to-map edge,
+not arbitrary DAG edge composition or distributed object-reference streaming.
+Acceptance requires current-tree focused and full-suite tests, package and
+installed-wheel checks on Windows/Linux, then hosted exact-head CI/CodeQL.
+Results from an earlier candidate revision do not carry across code changes.
